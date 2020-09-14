@@ -1,4 +1,4 @@
-# Cfg::Config
+# CFG::Config
 
 A Ruby library for working with the CFG configuration format.
 
@@ -30,7 +30,7 @@ To install this gem onto your local machine, run `bundle exec rake install`. To 
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/vsajip/rb-cfg-lib.
+Bug reports and pull requests are welcome on GitLab at https://gitlab.com/vsajip/rbconfig.
 
 
 ## License
