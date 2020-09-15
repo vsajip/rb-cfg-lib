@@ -1,3 +1,4 @@
+require 'set'
 require 'CFG/config/version'
 
 module CFG
@@ -155,5 +156,29 @@ module CFG
       'and': :AND,
       'or': :OR
     }.freeze
+
+    ESCAPES = {
+      'a':  "\u0007",   # rubocop: disable Layout/HashAlignment
+      'b':  "\b",       # rubocop: disable Layout/HashAlignment
+      'f':  "\u000C",   # rubocop: disable Layout/HashAlignment
+      'n':  "\n",       # rubocop: disable Layout/HashAlignment
+      'r':  "\r",       # rubocop: disable Layout/HashAlignment
+      't':  "\t",       # rubocop: disable Layout/HashAlignment
+      'v':  "\u000B",   # rubocop: disable Layout/HashAlignment
+      '\\': '\\',
+      '\'': "'",
+      '"':  '"'         # rubocop: disable Layout/HashAlignment
+    }.freeze
+
+    NULL_VALUE = Object.new
+
+    KEYWORD_VALUES = {
+      :TRUE => true,        # rubocop: disable Style/HashSyntax
+      :FALSE => false,      # rubocop: disable Style/HashSyntax
+      :NONE => NULL_VALUE   # rubocop: disable Style/HashSyntax
+    }.freeze
+
+    class Tokenizer
+    end
   end
 end
