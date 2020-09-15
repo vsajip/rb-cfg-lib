@@ -1,12 +1,12 @@
-require "test_helper"
+require 'test_helper'
 
-class CFG::PackageTest < Minitest::Test
+class PackageTest < Minitest::Test
   def test_valid_version
     refute_nil ::CFG::Config::VERSION
   end
 end
 
-class CFG::LocationTest < Minitest::Test
+class LocationTest < Minitest::Test
   def test_location
     loc1 = CFG::Config::Location.new
     assert loc1.line == 1
@@ -25,9 +25,9 @@ class CFG::LocationTest < Minitest::Test
   end
 end
 
-class CFG::TokenTest < Minitest::Test
+class TokenTest < Minitest::Test
   def test_token
-    t = ::CFG::Config::Token::new(:EOF, '')
+    t = ::CFG::Config::Token.new(:EOF, '')
     assert t.to_s == 'Token(EOF, "", nil)'
   end
 end

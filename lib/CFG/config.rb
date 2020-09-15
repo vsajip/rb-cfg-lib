@@ -1,4 +1,4 @@
-require "CFG/config/version"
+require 'CFG/config/version'
 
 module CFG
   module Config
@@ -22,7 +22,7 @@ module CFG
       attr_accessor :line
       attr_accessor :column
 
-      def initialize(line=1, column=1)
+      def initialize(line = 1, column = 1)
         @line = line
         @column = column
       end
@@ -108,7 +108,7 @@ module CFG
       attr_accessor :text
       attr_accessor :value
 
-      def initialize(kind, text, value=nil)
+      def initialize(kind, text, value = nil)
         super(kind)
         @text = text
         @value = value
@@ -143,17 +143,17 @@ module CFG
       '|': :BITWISE_OR,
       '^': :BITWISEX_OR,
       '.': :DOT
-    }
+    }.freeze
 
     KEYWORDS = {
-      "true": :TRUE,
-      "false": :FALSE,
-      "null": :NONE,
-      "is": :IS,
-      "in": :IN,
-      "not": :NOT,
-      "and": :AND,
-      "or": :OR
-    }
+      'true': :TRUE,    # rubocop:disable Lint/BooleanSymbol
+      'false': :FALSE,  # rubocop:disable Lint/BooleanSymbol
+      'null': :NONE,
+      'is': :IS,
+      'in': :IN,
+      'not': :NOT,
+      'and': :AND,
+      'or': :OR
+    }.freeze
   end
 end
