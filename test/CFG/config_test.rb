@@ -21,5 +21,13 @@ class CFG::LocationTest < Minitest::Test
     loc2.update loc1
     assert loc2.line == 3
     assert loc2.column == 1
+    assert loc2.to_s == '(3, 1)'
+  end
+end
+
+class CFG::TokenTest < Minitest::Test
+  def test_token
+    t = ::CFG::Config::Token::new(:EOF, '')
+    assert t.to_s == 'Token(EOF, "", nil)'
   end
 end
