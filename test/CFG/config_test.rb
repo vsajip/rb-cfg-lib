@@ -1,4 +1,11 @@
+require 'stringio'
+
 require 'test_helper'
+
+def make_tokenizer(s)
+  stream = StringIO.new s
+  CFG::Config::Tokenizer.new stream
+end
 
 class PackageTest < Minitest::Test
   def test_valid_version
@@ -40,4 +47,12 @@ class TokenizerTest < Minitest::Test
     t = CFG::Config::Tokenizer.new(nil)
     refute_nil t
   end
+
+  def test_tokens
+    tokenizer = make_tokenizer('')
+    t = tokenizer.get_token
+    # refute_nil t
+    # assert t.kind, :EOF
+  end
+
 end

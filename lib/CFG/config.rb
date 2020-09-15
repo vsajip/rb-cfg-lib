@@ -1,4 +1,6 @@
 require 'set'
+require 'stringio'
+
 require 'CFG/config/version'
 
 module CFG
@@ -196,12 +198,28 @@ module CFG
       end
 
       def push_back(c)
-        if ((c != "\u0000") && ((c == "\n") || !c.white_space?))
+        if ((c != nil) && ((c == "\n") || !c.white_space?))
           @pushed_back.push([c, Location.from(@char_location)])
         end
       end
 
       def get_char
+        if @pushed_back.length > 0
+          result, loc = @pushed_back.pop
+          @char_location.update loc
+          @location.update loc          # will be bumped later
+        else
+          @char_location.update @location
+          result = @stream.read 1
+        end
+        if result != nil
+          if result == "\n"
+            @location.next_line
+          else
+            @location.column += 1
+          end
+        end
+        result
       end
 
       def append_char
