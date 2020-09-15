@@ -3,6 +3,11 @@ require 'CFG/config/version'
 
 module CFG
   module Config
+
+    def white_space?(c)
+      c =~ /[[:space:]]/
+    end
+
     class RecognizerError < StandardError
       attr_accessor :location
     end
@@ -22,6 +27,10 @@ module CFG
     class Location
       attr_accessor :line
       attr_accessor :column
+
+      def self.from(other)
+        Location.new other.line, other.column
+      end
 
       def initialize(line = 1, column = 1)
         @line = line
@@ -179,6 +188,34 @@ module CFG
     }.freeze
 
     class Tokenizer
+      def initialize(stream)
+        @stream = stream
+        @location = Location.new
+        @char_location = Location.new
+        @pushed_back = []
+      end
+
+      def push_back(c)
+        if ((c != "\u0000") && ((c == "\n") || !c.white_space?))
+          @pushed_back.push([c, Location.from(@char_location)])
+        end
+      end
+
+      def get_char
+      end
+
+      def append_char
+      end
+
+      def get_number
+      end
+
+      def parse_escapes
+      end
+
+      def get_token
+      end
+
     end
   end
 end
