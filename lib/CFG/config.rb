@@ -23,6 +23,9 @@ module CFG
         c =~ /[[:alnum:]]/
       end
 
+      def hexdigit?(c)
+        c =~ /[[:xdigit:]]/
+      end
     end
 
     class RecognizerError < StandardError
@@ -168,7 +171,7 @@ module CFG
       '~': :BITWISE_COMPLEMENT,
       '&': :BITWISE_AND,
       '|': :BITWISE_OR,
-      '^': :BITWISEX_OR,
+      '^': :BITWISE_XOR,
       '.': :DOT
     }.freeze
 
@@ -239,7 +242,100 @@ module CFG
         result
       end
 
-      def get_number
+      def get_number(text, startloc, endloc)
+        kind = :INTEGER
+        in_exponent = false
+        radix = 0
+        dot_seen = text.index('.') != nil
+        last_was_digit = digit?(text[-1])
+
+        while true
+          c = get_char
+
+          if c == nil
+            break
+          end
+          if c == '.'
+            dot_seen = true
+          end
+          if c == '_'
+            if last_was_digit
+              text = append_char text, c, endloc
+              last_was_digit = false
+              next
+            end
+            e = TokenizerError.new "Invalid '_' in number: #{text}#{c}"
+
+            e.location = @char_location
+            raise e
+          end
+          last_was_digit = false  # unless set in one of the clauses below
+          if (((radix == 0) && (c >= '0') && (c <= '9')) ||
+              ((radix == 2) && (c >= '0') && (c <= '1')) ||
+              ((radix == 8) && (c >= '0') && (c <= '7')) ||
+              ((radix == 16) && hexdigit?(c)))
+            text = append_char text, c, endloc
+            last_was_digit = true
+          elsif (((c == 'o') || (c == 'O') || (c == 'x') ||
+                  (c == 'X') || (c == 'b') || (c == 'B')) &&
+                  (text.length == 1) && (text[0] == '0'))
+            if ((c == 'x') || (c == 'X'))
+                radix = 16
+            else
+              radix = ((c == 'o') || (c == 'O')) ? 8 : 2
+            end
+            text = append_char text, c, endloc
+          elsif ((radix == 0) && (c == '.') && !in_exponent && (text.index(c) == nil))
+            text = append_char text, c, endloc
+          elsif ((radix == 0) && (c == '-') && (text.index('-', 1) == nil) && in_exponent)
+            text = append_char text, c, endloc
+          elsif ((radix == 0) && ((c == 'e') || (c == 'E')) && (text.index('e') == nil) &&
+                 (text.index('E') == nil) && (text[-1] != '_'))
+            text = append_char text, c, endloc
+            in_exponent = true
+          else
+            break
+          end
+        end
+
+        # Reached the end of the actual number part. Before checking
+        # for complex, ensure that the last char wasn't an underscore.
+        if (text[-1] == '_')
+            e = TokenizerError.new "Invalid '_' at end of number: #{text}"
+
+            e.location = endloc
+            raise e
+        end
+        if ((radix == 0) && ((c == 'j') || (c == 'J')))
+          text = append_char text, c, endloc
+          kind = :COMPLEX
+        else
+          # not allowed to have a letter or digit which wasn't accepted
+          if ((c != '.') && !alnum?(c))
+            push_back c
+          else
+            e = TokenizerError.new "Invalid character in number: #{c}"
+
+            e.location = @char_location
+            raise e
+          end
+        end
+
+        s = text.gsub(/_/, '')
+
+        if (radix != 0)
+          value = s[2..].to_i(base=radix)
+        elsif kind == :COMPLEX
+          imaginary = s[..-1].to_f
+          value = Complex(0.0, imaginary)
+        elsif (in_exponent || dot_seen)
+          kind = :FLOAT
+          value = s.to_f
+        else
+          radix = (s[0] == '0') ? 8 : 10
+          value = s.to_i(base=radix)
+        end
+        return text, kind, value
       end
 
       def parse_escapes(s)
@@ -440,6 +536,102 @@ module CFG
             rescue RecognizerError
               e.location = start_location
               raise e
+            end
+            break
+          elsif digit?(c)
+            token = append_char token, c, end_location
+            token, kind, value = get_number token, start_location, end_location
+            break
+          elsif c == '='
+            nc = get_char
+
+            if (nc != '=')
+              kind = :ASSIGN
+              token = append_char token, c, end_location
+              push_back nc
+            else
+              kind = :EQUAL
+              token += c
+              token = append_char token, c, end_location
+            end
+            break
+          elsif PUNCTUATION.key?(c.to_sym)
+            kind = PUNCTUATION[c]
+            token = append_char token, c, end_location
+            if c == '.'
+              c = get_char
+              if !digit?(c)
+                push_back c
+              else
+                token = append_char token, c, end_location
+                token, kind, value = get_number token, start_location, end_location
+              end
+            elsif c == '-'
+              c = get_char
+              if !digit?(c) && (c != '.')
+                push_back c
+              else
+                token = append_char token, c, end_location
+                token, kind, value = get_number token, start_location, end_location
+              end
+            elsif c == '<'
+              c = get_char
+              if c == '='
+                kind = :LESS_THAN_OR_EQUAL
+                token = append_char token, c, end_location
+              elsif c == '>'
+                kind = :ALT_UNEQUAL
+                token = append_char token, c, end_location
+              elsif c == '<'
+                kind = :LEFT_SHIFT
+                token = append_char token, c, end_location
+              else
+                push_back c
+              end
+            elsif c == '>'
+              c = get_char
+              if c == '='
+                kind = :GREATER_THAN_OR_EQUAL
+                token = append_char token, c, end_location
+              elsif c == '>'
+                kind = :RIGHT_SHIFT
+                token = append_char token, c, end_location
+              else
+                push_back c
+              end
+            elsif c == '!'
+              c = get_char
+              if (c == '=')
+                kind = :UNEQUAL
+                token = append_char token, c, end_location
+              else
+                push_back c
+              end
+            elsif c == '/'
+              c = get_char
+              if c != '/'
+                push_back c
+              else
+                kind = :SLASH_SLASH
+                token = append_char token, c, end_location
+              end
+            elsif c == '*'
+              c = get_char
+              if c != '*'
+                push_back c
+              else
+                kind = :POWER
+                token = append_char token, c, end_location
+              end
+            elsif (c == '&') || (c == '|')
+              c2 = get_char
+
+              if (c2 != c)
+                push_back c2
+              else
+                kind = (c2 == '&') ? :AND : :OR
+                token = append_char token, c, end_location
+              end
             end
             break
           else

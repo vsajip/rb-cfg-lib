@@ -85,6 +85,94 @@ class TokenizerTest < Minitest::Test
     assert_equal '(1, 1)', t.start.to_s
     assert_equal '(1, 5)', t.end.to_s
     assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '2.71828'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal  '2.71828', t.text
+    assert_equal 2.71828, t.value
+    assert_equal '(1, 7)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '.5'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal '.5', t.text
+    assert_equal 0.5, t.value
+    assert_equal '(1, 2)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '-.5'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal '-.5', t.text
+    assert_equal (-0.5), t.value
+    assert_equal '(1, 3)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '0x123aBc'
+    t = tokenizer.get_token
+    assert_equal :INTEGER, t.kind
+    assert_equal "0x123aBc", t.text
+    assert_equal 0x123abc, t.value
+    assert_equal '(1, 8)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '0o123'
+    t = tokenizer.get_token
+    assert_equal :INTEGER, t.kind
+    assert_equal '0o123', t.text
+    assert_equal 83, t.value
+    assert_equal '(1, 5)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '0123'
+    t = tokenizer.get_token
+    assert_equal :INTEGER, t.kind
+    assert_equal '0123', t.text
+    assert_equal 83, t.value
+    assert_equal '(1, 4)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '0b0001_0110_0111'
+    t = tokenizer.get_token
+    assert_equal :INTEGER, t.kind
+    assert_equal '0b0001_0110_0111', t.text
+    assert_equal 0x167, t.value
+    assert_equal '(1, 16)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '1e8'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal '1e8', t.text
+    assert_equal 1e8, t.value
+    assert_equal '(1, 3)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '1e-8'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal '1e-8', t.text
+    assert_equal 1e-8, t.value
+    assert_equal '(1, 4)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '-4'
+    t = tokenizer.get_token
+    assert_equal :INTEGER, t.kind
+    assert_equal '-4', t.text
+    assert_equal -4, t.value
+    assert_equal '(1, 2)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer '-4e8'
+    t = tokenizer.get_token
+    assert_equal :FLOAT, t.kind
+    assert_equal '-4e8', t.text
+    assert_equal -4e8, t.value
+    assert_equal '(1, 4)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
   end
 
 end
