@@ -38,7 +38,7 @@ end
 class TokenTest < Minitest::Test
   def test_token
     t = CFG::Config::Token.new(:EOF, '')
-    assert t.to_s == 'Token(EOF, "", nil)'
+    assert_equal 'Token(EOF, "", nil)', t.to_s
   end
 end
 
@@ -51,8 +51,40 @@ class TokenizerTest < Minitest::Test
   def test_tokens
     tokenizer = make_tokenizer('')
     t = tokenizer.get_token
-    # refute_nil t
-    # assert t.kind, :EOF
+    assert_equal :EOF,  t.kind
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer("# a comment\n")
+    t = tokenizer.get_token
+    assert_equal :NEWLINE,  t.kind
+    assert_equal '# a comment',  t.text
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer('foo')
+    t = tokenizer.get_token
+    assert_equal :WORD, t.kind
+    assert_equal "foo", t.text
+    assert_equal '(1, 1)', t.start.to_s
+    assert_equal '(1, 3)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer("`foo`")
+    t = tokenizer.get_token
+    assert_equal :BACKTICK, t.kind
+    assert_equal "`foo`", t.text
+    assert_equal 'foo', t.value
+    assert_equal '(1, 1)', t.start.to_s
+    assert_equal '(1, 5)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
+
+    tokenizer = make_tokenizer("'foo'")
+    t = tokenizer.get_token
+    assert_equal :STRING, t.kind
+    assert_equal "'foo'", t.text
+    assert_equal 'foo', t.value
+    assert_equal '(1, 1)', t.start.to_s
+    assert_equal '(1, 5)', t.end.to_s
+    assert_equal :EOF,  tokenizer.get_token.kind
   end
 
 end

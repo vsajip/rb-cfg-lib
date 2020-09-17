@@ -6,8 +6,23 @@ require 'CFG/config/version'
 module CFG
   module Config
 
-    def white_space?(c)
-      c =~ /[[:space:]]/
+    module Utils
+      def white_space?(c)
+        c =~ /[[:space:]]/
+      end
+
+      def letter?(c)
+        c =~ /[[:alpha:]]/
+      end
+
+      def digit?(c)
+        c =~ /[[:digit:]]/
+      end
+
+      def alnum?(c)
+        c =~ /[[:alnum:]]/
+      end
+
     end
 
     class RecognizerError < StandardError
@@ -190,6 +205,8 @@ module CFG
     }.freeze
 
     class Tokenizer
+      include Utils
+
       def initialize(stream)
         @stream = stream
         @location = Location.new
@@ -198,7 +215,7 @@ module CFG
       end
 
       def push_back(c)
-        if ((c != nil) && ((c == "\n") || !c.white_space?))
+        if ((c != nil) && ((c == "\n") || !white_space?(c)))
           @pushed_back.push([c, Location.from(@char_location)])
         end
       end
@@ -222,16 +239,219 @@ module CFG
         result
       end
 
-      def append_char
-      end
-
       def get_number
       end
 
-      def parse_escapes
+      def parse_escapes(s)
+        i = s.index '\\'
+        if i == nil
+          result = s
+        else
+          failed = false
+          result = ''
+          while i != nil
+            result += s[0..i - 1]
+            c = s[i + 1]
+            if ESCAPES.key?(c)
+              result += ESCAPES[c]
+              i += 2
+            elsif c =~ /xu/i
+              if c == 'x' or c == 'X'
+                slen = 4
+              else
+                slen = c == 'u' ? 6 : 10
+              end
+              if i + n > s.length
+                failed = true
+                break
+              end
+              p = s[i + 2 .. i + slen - 1]
+              if p =~/^[[:xdigit:]]$/i
+                failed = true
+                break
+              end
+              j = p.to_i(base=16)
+              if j.between?(0xd800, 0xdfff) or (j >= 0x110000)
+                failed = true
+                break
+              end
+              result += j.chr 'utf-8'
+              i += slen
+            end
+            s = s[i..]
+            i = s.index '\\'
+          end
+          if failed
+            e = TokenizerError.new "Invalid escape sequence at index #{i}"
+            raise e
+          end
+        end
+        result
+      end
+
+      def append_char(token, c, end_location)
+        token += c
+        end_location.update @char_location
+        token
       end
 
       def get_token
+        start_location = Location.new
+        end_location = Location.new
+        kind = :EOF
+        token = ''
+        value = nil
+
+        while true
+          c = get_char
+
+          start_location.update @char_location
+          end_location.update @char_location
+
+          if c == nil
+            break
+          end
+          if c == '#'
+            token += c + @stream.readline.rstrip
+            kind = :NEWLINE
+            @location.next_line
+            end_location.update(@location)
+            end_location.column -= 1
+            break
+          elsif c == "\n"
+            token += c
+            end_location.update @location
+            end_location.column -= 1
+            kind = :NEWLINE
+            break
+          elsif c == "\r"
+            c = get_char
+            if c != "\n"
+                push_back c
+            end
+            kind = :NEWLINE
+            break
+          elsif c == "\\"
+            c = get_char
+            if c != "\n"
+              e = TokenizerError.new "Unexpected character: \\"
+              e.location = @char_location
+              raise e
+            end
+            end_location.update @char_location
+            next
+          elsif white_space?(c)
+            next
+          elsif c == "_" or letter?c
+            kind = :WORD
+            token = append_char token, c, end_location
+            c = get_char
+            while ((c != nil) && (alnum?(c) || (c == '_')))
+                token = append_char token, c, end_location
+                c = get_char
+            end
+            push_back c
+            value = token
+            if KEYWORDS.key?(value)
+              kind = KEYWORDS[value]
+              if KEYWORD_VALUES.key?(kind)
+                value = KEYWORD_VALUES[kind]
+              end
+            end
+            break
+          elsif c == '`'
+            kind = :BACKTICK
+            token = append_char token, c, end_location
+            while true
+              c = get_char
+              if c == nil
+                break
+              end
+              token = append_char token, c, end_location
+              if c == '`'
+                break
+              end
+            end
+            if c == nil
+              e = TokenizerError.new "Unterminated `-string: #{token}"
+              e.location = start_location
+              raise e
+            end
+            begin
+              value = parse_escapes token[1..token.length - 2]
+            rescue RecognizerError
+              e.location = start_location
+              raise e
+            end
+            break
+          elsif c == '"' or c == "'"
+            quote = c
+            multi_line = false
+            escaped = false
+            kind = :STRING
+
+            token = append_char token, c, end_location
+            c1 = get_char
+            c1_loc = Location.from @char_location
+
+            if c1 != quote
+              push_back c1
+            else
+              c2 = get_char
+              if c2 != quote
+                push_back c2
+                if c2 == nil
+                  @char_location.update c1_loc
+                end
+                push_back c1
+              else
+                multi_line = true
+                token = append_char token, quote, end_location
+                token = append_char token, quote, end_location
+              end
+            end
+
+            quoter = token[0..]
+
+            while true
+              c = get_char
+              if (c == nil)
+                break
+              end
+              token = append_char token, c, end_location
+              if ((c == quote) && !escaped)
+                n = token.length
+
+                if (!multi_line || (n >= 6) && (token[n - 3.. n - 1] == quoter) && token[n - 4] != '\\')
+                  break
+                end
+              end
+              escaped = (c == '\\') ? !escaped : false
+            end
+            if (c == '\u0000')
+                e = TokenizerError.new "Unterminated quoted string: #{token}"
+
+                e.location = start_location
+                raise e
+            end
+            n = quoter.length
+            begin
+              value = parse_escapes token[n..token.length - n - 1]
+            rescue RecognizerError
+              e.location = start_location
+              raise e
+            end
+            break
+          else
+            e = TokenizerError.new "Unexpected character: #{c}"
+            e.location = @char_location
+            raise e
+          end
+        end
+        result = Token.new kind, token, value
+        result.start = Location.from start_location
+        result.end = Location.from end_location
+        result
       end
 
     end
