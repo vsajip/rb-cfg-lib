@@ -207,6 +207,24 @@ module CFG
       :NONE => NULL_VALUE   # rubocop: disable Style/HashSyntax
     }.freeze
 
+    # class TokenIterator < Enumerator
+      # attr_accessor :tokenizer
+
+      # def initialize(tokenizer)
+        # @tokenizer = tokenizer
+        # @more = true
+      # end
+
+      # def next
+        # if !@more
+          # raise StopIteration
+        # end
+        # result = @tokenizer.get_token
+        # @more = (result.kind != :EOF)
+        # result
+      # end
+    # end
+
     class Tokenizer
       include Utils
 
@@ -215,6 +233,22 @@ module CFG
         @location = Location.new
         @char_location = Location.new
         @pushed_back = []
+      end
+
+      # def to_enum
+        # TokenIterator.new self
+      # end
+
+      def tokens
+        result = []
+        while true
+          t = get_token
+          result.push t
+          if t.kind == :EOF
+            break
+          end
+        end
+        result
       end
 
       def push_back(c)
@@ -448,8 +482,8 @@ module CFG
             end
             push_back c
             value = token
-            if KEYWORDS.key?(value)
-              kind = KEYWORDS[value]
+            if KEYWORDS.key?(value.to_sym)
+              kind = KEYWORDS[value.to_sym]
               if KEYWORD_VALUES.key?(kind)
                 value = KEYWORD_VALUES[kind]
               end
@@ -556,7 +590,7 @@ module CFG
             end
             break
           elsif PUNCTUATION.key?(c.to_sym)
-            kind = PUNCTUATION[c]
+            kind = PUNCTUATION[c.to_sym]
             token = append_char token, c, end_location
             if c == '.'
               c = get_char

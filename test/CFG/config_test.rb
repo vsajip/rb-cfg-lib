@@ -49,130 +49,92 @@ class TokenizerTest < Minitest::Test
   end
 
   def test_tokens
-    tokenizer = make_tokenizer('')
-    t = tokenizer.get_token
-    assert_equal :EOF,  t.kind
-    assert_equal :EOF,  tokenizer.get_token.kind
+    cases = [
+      ['', :EOF, '', nil, '(1, 1)'],
+      ["# a comment\n", :NEWLINE, '# a comment', nil, '(2, 0)'],
+      ['foo', :WORD, 'foo', 'foo', '(1, 3)'],
+      ["`foo`", :BACKTICK, "`foo`", 'foo', '(1, 5)'],
+      ["'foo'", :STRING, "'foo'", 'foo', '(1, 5)'],
+      ['2.71828', :FLOAT, '2.71828', 2.71828, '(1, 7)'],
+      ['.5', :FLOAT, '.5', 0.5, '(1, 2)'],
+      ['-.5', :FLOAT, '-.5', -0.5, '(1, 3)'],
+      ['0x123aBc', :INTEGER, '0x123aBc', 0x123abc, '(1, 8)'],
+      ['0o123', :INTEGER, '0o123', 83, '(1, 5)'],
+      ['0123', :INTEGER, '0123', 83, '(1, 4)'],
+      ['0b0001_0110_0111', :INTEGER, '0b0001_0110_0111', 0x167, '(1, 16)'],
+      ['1e8', :FLOAT, '1e8', 1e8, '(1, 3)'],
+      ['1e-8', :FLOAT, '1e-8', 1e-8, '(1, 4)'],
+      ['-4', :INTEGER, '-4', -4, '(1, 2)'],
+      ['-4e8', :FLOAT, '-4e8', -4e8, '(1, 4)'],
 
-    tokenizer = make_tokenizer("# a comment\n")
-    t = tokenizer.get_token
-    assert_equal :NEWLINE,  t.kind
-    assert_equal '# a comment',  t.text
-    assert_equal :EOF,  tokenizer.get_token.kind
+      # empty strings
+      ["\"\"", :STRING, "\"\"", '', '(1, 2)'],
+      ["''", :STRING, "\''", '', '(1, 2)'],
+      ["\"\"\"\"\"\"", :STRING, "\"\"\"\"\"\"", '', '(1, 6)'],
+      ["\"\"\"abc\ndef\n\"\"\"", :STRING, "\"\"\"abc\ndef\n\"\"\"", "abc\ndef\n", '(3, 3)'],
+      ["""'\n'""", :STRING, """'\n'""", "\n", '(2, 1)'],
+    ]
 
-    tokenizer = make_tokenizer('foo')
-    t = tokenizer.get_token
-    assert_equal :WORD, t.kind
-    assert_equal "foo", t.text
-    assert_equal '(1, 1)', t.start.to_s
-    assert_equal '(1, 3)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
+    cases.each do |item|
+      source, kind, text, value, ends = item
+      tokenizer = make_tokenizer source
+      t = tokenizer.get_token
+      assert_equal kind, t.kind
+      assert_equal text, t.text
+      if value != nil
+        assert_equal value, t.value
+      else
+        assert_nil t.value
+      end
+      assert_equal '(1, 1)', t.start.to_s
+      if ends != nil
+        assert_equal ends, t.end.to_s
+      end
+      assert_equal :EOF,  tokenizer.get_token.kind
+    end
 
-    tokenizer = make_tokenizer("`foo`")
-    t = tokenizer.get_token
-    assert_equal :BACKTICK, t.kind
-    assert_equal "`foo`", t.text
-    assert_equal 'foo', t.value
-    assert_equal '(1, 1)', t.start.to_s
-    assert_equal '(1, 5)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
+    tokenizer = make_tokenizer "9+4j+a*b"
+    tokens = tokenizer.tokens
+    kinds = tokens.map { |t| t.kind }
+    texts = tokens.map { |t| t.text }
+    values = tokens.map { |t| t.value }
+    assert_equal [:INTEGER, :PLUS, :COMPLEX, :PLUS, :WORD, :STAR, :WORD, :EOF], kinds
+    assert_equal ['9', '+', '4j', '+', 'a', '*', 'b', ''], texts
+    assert_equal [9, nil, (0.0+4.0i), nil, 'a', nil, 'b', nil], values
+    source = "< > { } [ ] ( ) + - * / ** // % . <= <> << >= >> == != , : @ ~ & | ^ $ && ||"
+    tokenizer = make_tokenizer source
+    tokens = tokenizer.tokens
+    kinds = tokens.map { |t| t.kind }
+    texts = tokens.map { |t| t.text }
+    assert_equal [:LESS_THAN, :GREATER_THAN, :LEFT_CURLY, :RIGHT_CURLY,
+                  :LEFT_BRACKET, :RIGHT_BRACKET,
+                  :LEFT_PARENTHESIS, :RIGHT_PARENTHESIS,
+                  :PLUS, :MINUS, :STAR, :SLASH, :POWER, :SLASH_SLASH, :MODULO,
+                  :DOT, :LESS_THAN_OR_EQUAL, :ALT_UNEQUAL, :LEFT_SHIFT,
+                  :GREATER_THAN_OR_EQUAL, :RIGHT_SHIFT, :EQUAL, :UNEQUAL,
+                  :COMMA, :COLON, :AT, :BITWISE_COMPLEMENT, :BITWISE_AND,
+                  :BITWISE_OR, :BITWISE_XOR, :DOLLAR, :AND, :OR, :EOF], kinds
+    assert_equal ['<', '>', '{', '}', '[', ']', '(', ')', '+', '-', '*', '/',
+                  '**', '//', '%', '.', '<=', '<>', '<<', '>=', '>>', '==',
+                  '!=', ',', ':', '@', '~', '&', '|', '^', '$', '&&', '||',
+                  ''], texts
+    keywords = 'true false null is in not and or'
+    tokenizer = make_tokenizer keywords
+    tokens = tokenizer.tokens
+    kinds = tokens.map { |t| t.kind }
+    texts = tokens.map { |t| t.text }
+    assert_equal [:TRUE, :FALSE, :NONE, :IS, :IN, :NOT, :AND, :OR, :EOF], kinds
+    assert_equal ['true', 'false', 'null', 'is', 'in', 'not', 'and', 'or', ''], texts
 
-    tokenizer = make_tokenizer("'foo'")
-    t = tokenizer.get_token
-    assert_equal :STRING, t.kind
-    assert_equal "'foo'", t.text
-    assert_equal 'foo', t.value
-    assert_equal '(1, 1)', t.start.to_s
-    assert_equal '(1, 5)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
+    newlines = "\n \r \r\n"
+    tokenizer = make_tokenizer newlines
+    tokens = tokenizer.tokens
+    kinds = tokens.map { |t| t.kind }
+    assert_equal [:NEWLINE, :NEWLINE, :NEWLINE, :EOF], kinds
 
-    tokenizer = make_tokenizer '2.71828'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal  '2.71828', t.text
-    assert_equal 2.71828, t.value
-    assert_equal '(1, 7)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '.5'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal '.5', t.text
-    assert_equal 0.5, t.value
-    assert_equal '(1, 2)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '-.5'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal '-.5', t.text
-    assert_equal (-0.5), t.value
-    assert_equal '(1, 3)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '0x123aBc'
-    t = tokenizer.get_token
-    assert_equal :INTEGER, t.kind
-    assert_equal "0x123aBc", t.text
-    assert_equal 0x123abc, t.value
-    assert_equal '(1, 8)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '0o123'
-    t = tokenizer.get_token
-    assert_equal :INTEGER, t.kind
-    assert_equal '0o123', t.text
-    assert_equal 83, t.value
-    assert_equal '(1, 5)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '0123'
-    t = tokenizer.get_token
-    assert_equal :INTEGER, t.kind
-    assert_equal '0123', t.text
-    assert_equal 83, t.value
-    assert_equal '(1, 4)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '0b0001_0110_0111'
-    t = tokenizer.get_token
-    assert_equal :INTEGER, t.kind
-    assert_equal '0b0001_0110_0111', t.text
-    assert_equal 0x167, t.value
-    assert_equal '(1, 16)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '1e8'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal '1e8', t.text
-    assert_equal 1e8, t.value
-    assert_equal '(1, 3)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '1e-8'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal '1e-8', t.text
-    assert_equal 1e-8, t.value
-    assert_equal '(1, 4)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '-4'
-    t = tokenizer.get_token
-    assert_equal :INTEGER, t.kind
-    assert_equal '-4', t.text
-    assert_equal -4, t.value
-    assert_equal '(1, 2)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
-
-    tokenizer = make_tokenizer '-4e8'
-    t = tokenizer.get_token
-    assert_equal :FLOAT, t.kind
-    assert_equal '-4e8', t.text
-    assert_equal -4e8, t.value
-    assert_equal '(1, 4)', t.end.to_s
-    assert_equal :EOF,  tokenizer.get_token.kind
+    assert_equal false, make_tokenizer('false').get_token.value
+    assert_equal false, make_tokenizer('false').get_token.value
+    assert_equal CFG::Config::NULL_VALUE, make_tokenizer('null').get_token.value
   end
 
 end
