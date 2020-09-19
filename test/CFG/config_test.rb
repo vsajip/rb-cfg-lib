@@ -35,6 +35,7 @@ def load_data(path)
       value.clear
     end
   end
+  f.close
   result
 end
 
@@ -187,6 +188,70 @@ class TokenizerTest < Minitest::Test
       # require 'byebug'; byebug if k == 'C25'
       tokens = tokenizer.tokens
       assert_equal expected[k], tokens[0..expected[k].size - 1] if expected.key?(k)
+    end
+  end
+
+  def test_locations
+    path = data_file_path 'pos.forms.cfg.txt'
+    expected = []
+    f = File.open path, 'r:utf-8'
+    f.each do |line|
+      nums = line.rstrip.split(' ').map(&:to_i)
+      assert nums.length == 4
+      expected.push nums
+    end
+    f.close
+    path = data_file_path 'forms.cfg'
+    f = File.open path, 'r:utf-8'
+    tokenizer = CFG::Config::Tokenizer.new f
+    tokens = tokenizer.tokens
+    f.close
+    assert_equal tokens.length, expected.length
+    tokens.each_with_index do |t, i|
+      nums = expected[i]
+      assert_equal t.start.line, nums[0]
+      assert_equal t.start.column, nums[1]
+      assert_equal t.end.line, nums[2]
+      assert_equal t.end.column, nums[3]
+    end
+  end
+
+  def test_bad_tokens
+    bad_numbers = [
+      ['9a', 'Invalid character in number', 1, 2],
+      ['079', 'Invalid character in number', 1, 1],
+      ['0xaBcz', 'Invalid character in number', 1, 6],
+      ['0o79', 'Invalid character in number', 1, 4],
+      ['.5z', 'Invalid character in number', 1, 3],
+      ['0.5.7', 'Invalid character in number', 1, 4],
+      [' 0.4e-z', 'Invalid character in number', 1, 7],
+      [' 0.4e-8.3', 'Invalid character in number', 1, 8],
+      [' 089z', 'Invalid character in number', 1, 5],
+      ['0o89z', 'Invalid character in number', 1, 3],
+      ['0X89g', 'Invalid character in number', 1, 5],
+      ['10z', 'Invalid character in number', 1, 3],
+      [' 0.4e-8Z', 'Invalid character in number: Z', 1, 8],
+      ['123_', "Invalid '_' at end of number: 123_", 1, 4],
+      ['1__23', "Invalid '_' in number: 1__", 1, 3],
+      ['1_2__3', "Invalid '_' in number: 1_2__", 1, 5],
+      [' 0.4e-8_', "Invalid '_' at end of number: 0.4e-8_", 1, 8],
+      [' 0.4_e-8', "Invalid '_' at end of number: 0.4_", 1, 5],
+      [' 0._4e-8', "Invalid '_' in number: 0._", 1, 4],
+      ['\\ ', 'Unexpected character: \\', 1, 2]
+    ]
+
+    bad_numbers.each do |bn|
+      src, msg, line, col = bn
+      tokenizer = make_tokenizer src
+      begin
+        t = tokenizer.get_token
+        assert_nil t
+      rescue CFG::Config::RecognizerError => e
+        loc = e.location
+        refute_nil e.message.index(msg)
+        assert_equal line, loc.line
+        assert_equal col, loc.column
+      end
     end
   end
 end

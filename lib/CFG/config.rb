@@ -153,7 +153,7 @@ module CFG
 
       def ==(other)
         @kind == other.kind && @text == other.text && @value == other.value &&
-        @start == other.start && @end == other.end
+          @start == other.start && @end == other.end
       end
     end
 
@@ -258,7 +258,7 @@ module CFG
         result
       end
 
-      def get_number(text, endloc)
+      def get_number(text, startloc, endloc)
         kind = :INTEGER
         in_exponent = false
         radix = 0
@@ -337,7 +337,7 @@ module CFG
         s = text.gsub(/_/, '')
 
         if radix != 0
-          value = s[2..-1].to_i radix
+          value = Integer s[2..-1], radix
         elsif kind == :COMPLEX
           imaginary = s[0..-2].to_f
           value = Complex(0.0, imaginary)
@@ -346,7 +346,13 @@ module CFG
           value = s.to_f
         else
           radix = s[0] == '0' ? 8 : 10
-          value = s.to_i radix
+          begin
+            value = Integer s, radix
+          rescue ArgumentError
+            e = TokenizerError.new "Invalid character in number: #{s}"
+            e.location = startloc
+            raise e
+          end
         end
         [text, kind, value]
       end
@@ -379,7 +385,7 @@ module CFG
                 failed = true
                 break
               end
-              j = p.to_i 16
+              j = Integer p, 16
               if j.between?(0xd800, 0xdfff) || (j >= 0x110000)
                 failed = true
                 break
@@ -540,7 +546,7 @@ module CFG
             break
           elsif digit?(c)
             token = append_char token, c, end_location
-            token, kind, value = get_number token, end_location
+            token, kind, value = get_number token, start_location, end_location
             break
           elsif c == '='
             nc = get_char
@@ -564,7 +570,7 @@ module CFG
                 push_back c
               else
                 token = append_char token, c, end_location
-                token, kind, value = get_number token, end_location
+                token, kind, value = get_number token, start_location, end_location
               end
             elsif c == '-'
               c = get_char
@@ -572,7 +578,7 @@ module CFG
                 push_back c
               else
                 token = append_char token, c, end_location
-                token, kind, value = get_number token, end_location
+                token, kind, value = get_number token, start_location, end_location
               end
             elsif c == '<'
               c = get_char
