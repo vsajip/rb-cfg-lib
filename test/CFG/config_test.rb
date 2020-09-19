@@ -217,7 +217,9 @@ class TokenizerTest < Minitest::Test
   end
 
   def test_bad_tokens
-    bad_numbers = [
+    bad_things = [
+      # numbers
+
       ['9a', 'Invalid character in number', 1, 2],
       ['079', 'Invalid character in number', 1, 1],
       ['0xaBcz', 'Invalid character in number', 1, 6],
@@ -237,10 +239,19 @@ class TokenizerTest < Minitest::Test
       [' 0.4e-8_', "Invalid '_' at end of number: 0.4e-8_", 1, 8],
       [' 0.4_e-8', "Invalid '_' at end of number: 0.4_", 1, 5],
       [' 0._4e-8', "Invalid '_' in number: 0._", 1, 4],
-      ['\\ ', 'Unexpected character: \\', 1, 2]
+      ['\\ ', 'Unexpected character: \\', 1, 2],
+
+      # strings
+
+      ["'", 'Unterminated quoted string:', 1, 1],
+      ['"', 'Unterminated quoted string:', 1, 1],
+      ["'''", 'Unterminated quoted string:', 1, 1],
+      ['  ;', 'Unexpected character: ', 1, 3],
+      ['"abc', 'Unterminated quoted string: ', 1, 1],
+      ["\"abc\\\ndef", 'Unterminated quoted string: ', 1, 1],
     ]
 
-    bad_numbers.each do |bn|
+    bad_things.each do |bn|
       src, msg, line, col = bn
       tokenizer = make_tokenizer src
       begin
@@ -251,6 +262,59 @@ class TokenizerTest < Minitest::Test
         refute_nil e.message.index(msg)
         assert_equal line, loc.line
         assert_equal col, loc.column
+      end
+    end
+  end
+
+  def test_escapes
+    good = [
+      ["'\\a'", "\u0007"],
+      ["'\\b'", "\b"],
+      ["'\\f'", "\u000C"],
+      ["'\\n'", "\n"],
+      ["'\\r'", "\r"],
+      ["'\\t'", "\t"],
+      ["'\\v'", "\u000B"],
+      ["'\\\\'", '\\'],
+      ["'\\''", "'"],
+      ["'\\\"'", '"'],
+      ["'\\xAB'", "\u00AB"],
+      ["'\\u2803'", "\u2803"],
+      ["'\\u28A0abc\\u28A0'", "\u28a0abc\u28a0"],
+      ["'\\u28A0abc'", "\u28a0abc"],
+      ["'\\uE000'", "\ue000"],
+      ["'\\U0010ffff'", "\u{10ffff}"]
+    ]
+
+    good.each do |acase|
+      src, value = acase
+      tokenizer = make_tokenizer src
+      # require 'byebug'; byebug if src == "'\\U0010ffff'"
+      t = tokenizer.get_token
+      assert_equal value, t.value
+    end
+
+    bad = [
+      "'\\z'",
+      "'\\x'",
+      "'\\xa'",
+      "'\\xaz'",
+      "'\\u'",
+      "'\\u0'",
+      "'\\u01'",
+      "'\\u012'",
+      "'\\u012z'",
+      "'\\u012zA'",
+      "'\\ud800'",
+      "'\\udfff'",
+      "'\\U00110000'"
+    ]
+
+    bad.each do |s|
+      begin
+        make_tokenizer(s).get_token
+      rescue CFG::Config::RecognizerError => e
+        refute_nil e.message.index 'Invalid escape sequence'
       end
     end
   end

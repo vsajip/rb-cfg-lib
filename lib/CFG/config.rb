@@ -365,18 +365,18 @@ module CFG
           failed = false
           result = ''
           until i.nil?
-            result += str[0..i - 1]
+            result += str[0..i - 1] if i.positive?
             c = str[i + 1]
             if ESCAPES.key?(c)
               result += ESCAPES[c]
               i += 2
-            elsif c =~ /xu/i
+            elsif c =~ /[xu]/i
               slen = if c.upcase == 'X'
                        4
                      else
                        c == 'u' ? 6 : 10
                      end
-              if i + n > str.length
+              if i + slen > str.length
                 failed = true
                 break
               end
@@ -385,18 +385,28 @@ module CFG
                 failed = true
                 break
               end
-              j = Integer p, 16
+              begin
+                j = Integer p, 16
+              rescue ArgumentError
+                failed = true
+                break
+              end
               if j.between?(0xd800, 0xdfff) || (j >= 0x110000)
                 failed = true
                 break
               end
               result += j.chr 'utf-8'
               i += slen
+            else
+              failed = true
+              break
             end
             str = str[i..-1]
             i = str.index '\\'
           end
-          if failed
+          if !failed
+            result += str
+          else
             e = TokenizerError.new "Invalid escape sequence at index #{i}"
             raise e
           end
@@ -518,7 +528,7 @@ module CFG
 
             quoter = token[0..-1]
 
-            while true
+            loop do
               c = get_char
               break if c.nil?
 
@@ -539,7 +549,7 @@ module CFG
             n = quoter.length
             begin
               value = parse_escapes token[n..token.length - n - 1]
-            rescue RecognizerError
+            rescue RecognizerError => e
               e.location = start_location
               raise e
             end
