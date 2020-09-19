@@ -3,12 +3,39 @@ require 'stringio'
 require 'test_helper'
 
 def make_tokenizer(src)
-  stream = StringIO.new src
+  stream = StringIO.new src, 'r:utf-8'
   CFG::Config::Tokenizer.new stream
+end
+
+def make_token(kind, text, value, sline, scol, eline, ecol)
+  spos = CFG::Config::Location.new sline, scol
+  epos = CFG::Config::Location.new eline, ecol
+  result = CFG::Config::Token.new kind, text, value
+  result.start = spos
+  result.end = epos
+  result
 end
 
 def data_file_path(dfn)
   File.join File.expand_path('resources'), dfn
+end
+
+def load_data(path)
+  result = {}
+  f = File.open path, 'r:utf-8'
+  key = nil
+  value = []
+  f.each do |line|
+    m = /^-- ([A-Z]\d+) -+/.match line
+    if m.nil?
+      value.push line.rstrip
+    else
+      result[key] = value.join("\n") if !key.nil? && !value.empty?
+      key = m[1]
+      value.clear
+    end
+  end
+  result
 end
 
 class PackageTest < Minitest::Test
@@ -140,6 +167,26 @@ class TokenizerTest < Minitest::Test
   end
 
   def test_data
-    # path = data_file_path 'testdata.txt'
+    path = data_file_path 'testdata.txt'
+    cases = load_data path
+    expected = {
+      'C25' => [
+        make_token(:WORD, 'unicode', 'unicode', 1, 1, 1, 7),
+        make_token(:ASSIGN, '=', nil, 1, 9, 1, 9),
+        make_token(:STRING, "'Grüß Gott'", 'Grüß Gott', 1, 11, 1, 21),
+        make_token(:NEWLINE, "\n", nil, 1, 22, 2, 0),
+        make_token(:WORD, 'more_unicode', 'more_unicode', 2, 1, 2, 12),
+        make_token(:COLON, ':', nil, 2, 13, 2, 13),
+        make_token(:STRING, "'Øresund'", 'Øresund', 2, 15, 2, 23),
+        make_token(:EOF, '', nil, 2, 24, 2, 24)
+      ]
+    }
+    cases.each do |k, v|
+      tokenizer = make_tokenizer v
+
+      # require 'byebug'; byebug if k == 'C25'
+      tokens = tokenizer.tokens
+      assert_equal expected[k], tokens[0..expected[k].size - 1] if expected.key?(k)
+    end
   end
 end

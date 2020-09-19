@@ -69,6 +69,10 @@ module CFG
       def to_s
         "(#{@line}, #{@column})"
       end
+
+      def ==(other)
+        @line == other.line && @column == other.column
+      end
     end
 
     # Kinds of token
@@ -145,6 +149,11 @@ module CFG
 
       def to_s
         "Token(#{@kind}, #{text.inspect}, #{value.inspect})"
+      end
+
+      def ==(other)
+        @kind == other.kind && @text == other.text && @value == other.value &&
+        @start == other.start && @end == other.end
       end
     end
 
@@ -237,7 +246,7 @@ module CFG
           @location.update loc # will be bumped later
         else
           @char_location.update @location
-          result = @stream.read 1
+          result = @stream.getc
         end
         unless result.nil?
           if result == "\n"
@@ -538,7 +547,7 @@ module CFG
 
             if nc != '='
               kind = :ASSIGN
-              token = append_char token, c, end_location
+              token += c
               push_back nc
             else
               kind = :EQUAL
