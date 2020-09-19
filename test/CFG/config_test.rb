@@ -2,9 +2,13 @@ require 'stringio'
 
 require 'test_helper'
 
-def make_tokenizer(s)
-  stream = StringIO.new s
+def make_tokenizer(src)
+  stream = StringIO.new src
   CFG::Config::Tokenizer.new stream
+end
+
+def data_file_path(dfn)
+  File.join File.expand_path('resources'), dfn
 end
 
 class PackageTest < Minitest::Test
@@ -53,7 +57,7 @@ class TokenizerTest < Minitest::Test
       ['', :EOF, '', nil, '(1, 1)'],
       ["# a comment\n", :NEWLINE, '# a comment', nil, '(2, 0)'],
       ['foo', :WORD, 'foo', 'foo', '(1, 3)'],
-      ["`foo`", :BACKTICK, "`foo`", 'foo', '(1, 5)'],
+      ['`foo`', :BACKTICK, '`foo`', 'foo', '(1, 5)'],
       ["'foo'", :STRING, "'foo'", 'foo', '(1, 5)'],
       ['2.71828', :FLOAT, '2.71828', 2.71828, '(1, 7)'],
       ['.5', :FLOAT, '.5', 0.5, '(1, 2)'],
@@ -68,11 +72,11 @@ class TokenizerTest < Minitest::Test
       ['-4e8', :FLOAT, '-4e8', -4e8, '(1, 4)'],
 
       # empty strings
-      ["\"\"", :STRING, "\"\"", '', '(1, 2)'],
-      ["''", :STRING, "\''", '', '(1, 2)'],
-      ["\"\"\"\"\"\"", :STRING, "\"\"\"\"\"\"", '', '(1, 6)'],
-      ["\"\"\"abc\ndef\n\"\"\"", :STRING, "\"\"\"abc\ndef\n\"\"\"", "abc\ndef\n", '(3, 3)'],
-      ["""'\n'""", :STRING, """'\n'""", "\n", '(2, 1)'],
+      ['""', :STRING, '""', '', '(1, 2)'],
+      ["''", :STRING, "''", '', '(1, 2)'],
+      ['""""""', :STRING, '""""""', '', '(1, 6)'],
+      ["\"\"\"abc\ndef\n\"\"\"", :STRING, "\"\"\"abc\ndef\n\"\"\"", "abc\ndef\n", '(3, 3)']
+      # ["""'\n'""", :STRING, """'\n'""", "\n", '(2, 1)']
     ]
 
     cases.each do |item|
@@ -81,39 +85,37 @@ class TokenizerTest < Minitest::Test
       t = tokenizer.get_token
       assert_equal kind, t.kind
       assert_equal text, t.text
-      if value != nil
+      if !value.nil?
         assert_equal value, t.value
       else
         assert_nil t.value
       end
       assert_equal '(1, 1)', t.start.to_s
-      if ends != nil
-        assert_equal ends, t.end.to_s
-      end
-      assert_equal :EOF,  tokenizer.get_token.kind
+      assert_equal(ends, t.end.to_s) unless ends.nil?
+      assert_equal :EOF, tokenizer.get_token.kind
     end
 
-    tokenizer = make_tokenizer "9+4j+a*b"
+    tokenizer = make_tokenizer '9+4j+a*b'
     tokens = tokenizer.tokens
-    kinds = tokens.map { |t| t.kind }
-    texts = tokens.map { |t| t.text }
-    values = tokens.map { |t| t.value }
-    assert_equal [:INTEGER, :PLUS, :COMPLEX, :PLUS, :WORD, :STAR, :WORD, :EOF], kinds
+    kinds = tokens.map(&:kind)
+    texts = tokens.map(&:text)
+    values = tokens.map(&:value)
+    assert_equal %i[INTEGER PLUS COMPLEX PLUS WORD STAR WORD EOF], kinds
     assert_equal ['9', '+', '4j', '+', 'a', '*', 'b', ''], texts
-    assert_equal [9, nil, (0.0+4.0i), nil, 'a', nil, 'b', nil], values
-    source = "< > { } [ ] ( ) + - * / ** // % . <= <> << >= >> == != , : @ ~ & | ^ $ && ||"
+    assert_equal [9, nil, (0.0 + 4.0i), nil, 'a', nil, 'b', nil], values
+    source = '< > { } [ ] ( ) + - * / ** // % . <= <> << >= >> == != , : @ ~ & | ^ $ && ||'
     tokenizer = make_tokenizer source
     tokens = tokenizer.tokens
-    kinds = tokens.map { |t| t.kind }
-    texts = tokens.map { |t| t.text }
-    assert_equal [:LESS_THAN, :GREATER_THAN, :LEFT_CURLY, :RIGHT_CURLY,
-                  :LEFT_BRACKET, :RIGHT_BRACKET,
-                  :LEFT_PARENTHESIS, :RIGHT_PARENTHESIS,
-                  :PLUS, :MINUS, :STAR, :SLASH, :POWER, :SLASH_SLASH, :MODULO,
-                  :DOT, :LESS_THAN_OR_EQUAL, :ALT_UNEQUAL, :LEFT_SHIFT,
-                  :GREATER_THAN_OR_EQUAL, :RIGHT_SHIFT, :EQUAL, :UNEQUAL,
-                  :COMMA, :COLON, :AT, :BITWISE_COMPLEMENT, :BITWISE_AND,
-                  :BITWISE_OR, :BITWISE_XOR, :DOLLAR, :AND, :OR, :EOF], kinds
+    kinds = tokens.map(&:kind)
+    texts = tokens.map(&:text)
+    assert_equal %i[LESS_THAN GREATER_THAN LEFT_CURLY RIGHT_CURLY
+                    LEFT_BRACKET RIGHT_BRACKET
+                    LEFT_PARENTHESIS RIGHT_PARENTHESIS
+                    PLUS MINUS STAR SLASH POWER SLASH_SLASH MODULO
+                    DOT LESS_THAN_OR_EQUAL ALT_UNEQUAL LEFT_SHIFT
+                    GREATER_THAN_OR_EQUAL RIGHT_SHIFT EQUAL UNEQUAL
+                    COMMA COLON AT BITWISE_COMPLEMENT BITWISE_AND
+                    BITWISE_OR BITWISE_XOR DOLLAR AND OR EOF], kinds
     assert_equal ['<', '>', '{', '}', '[', ']', '(', ')', '+', '-', '*', '/',
                   '**', '//', '%', '.', '<=', '<>', '<<', '>=', '>>', '==',
                   '!=', ',', ':', '@', '~', '&', '|', '^', '$', '&&', '||',
@@ -121,20 +123,23 @@ class TokenizerTest < Minitest::Test
     keywords = 'true false null is in not and or'
     tokenizer = make_tokenizer keywords
     tokens = tokenizer.tokens
-    kinds = tokens.map { |t| t.kind }
-    texts = tokens.map { |t| t.text }
-    assert_equal [:TRUE, :FALSE, :NONE, :IS, :IN, :NOT, :AND, :OR, :EOF], kinds
+    kinds = tokens.map(&:kind)
+    texts = tokens.map(&:text)
+    assert_equal %i[TRUE FALSE NONE IS IN NOT AND OR EOF], kinds
     assert_equal ['true', 'false', 'null', 'is', 'in', 'not', 'and', 'or', ''], texts
 
     newlines = "\n \r \r\n"
     tokenizer = make_tokenizer newlines
     tokens = tokenizer.tokens
-    kinds = tokens.map { |t| t.kind }
-    assert_equal [:NEWLINE, :NEWLINE, :NEWLINE, :EOF], kinds
+    kinds = tokens.map(&:kind)
+    assert_equal %i[NEWLINE NEWLINE NEWLINE EOF], kinds
 
     assert_equal false, make_tokenizer('false').get_token.value
     assert_equal false, make_tokenizer('false').get_token.value
     assert_equal CFG::Config::NULL_VALUE, make_tokenizer('null').get_token.value
   end
 
+  def test_data
+    # path = data_file_path 'testdata.txt'
+  end
 end

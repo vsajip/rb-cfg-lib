@@ -5,26 +5,25 @@ require 'CFG/config/version'
 
 module CFG
   module Config
-
     module Utils
-      def white_space?(c)
-        c =~ /[[:space:]]/
+      def white_space?(chr)
+        chr =~ /[[:space:]]/
       end
 
-      def letter?(c)
-        c =~ /[[:alpha:]]/
+      def letter?(chr)
+        chr =~ /[[:alpha:]]/
       end
 
-      def digit?(c)
-        c =~ /[[:digit:]]/
+      def digit?(chr)
+        chr =~ /[[:digit:]]/
       end
 
-      def alnum?(c)
-        c =~ /[[:alnum:]]/
+      def alnum?(chr)
+        chr =~ /[[:alnum:]]/
       end
 
-      def hexdigit?(c)
-        c =~ /[[:xdigit:]]/
+      def hexdigit?(chr)
+        chr =~ /[[:xdigit:]]/
       end
     end
 
@@ -150,80 +149,62 @@ module CFG
     end
 
     PUNCTUATION = {
-      ':': :COLON,
-      '-': :MINUS,
-      '+': :PLUS,
-      '*': :STAR,
-      '/': :SLASH,
-      '%': :MODULO,
-      ',': :COMMA,
-      '{': :LEFT_CURLY,
-      '}': :RIGHT_CURLY,
-      '[': :LEFT_BRACKET,
-      ']': :RIGHT_BRACKET,
-      '(': :LEFT_PARENTHESIS,
-      ')': :RIGHT_PARENTHESIS,
-      '@': :AT,
-      '$': :DOLLAR,
-      '<': :LESS_THAN,
-      '>': :GREATER_THAN,
-      '!': :NOT,
-      '~': :BITWISE_COMPLEMENT,
-      '&': :BITWISE_AND,
-      '|': :BITWISE_OR,
-      '^': :BITWISE_XOR,
-      '.': :DOT
+      ':' => :COLON,
+      '-' => :MINUS,
+      '+' => :PLUS,
+      '*' => :STAR,
+      '/' => :SLASH,
+      '%' => :MODULO,
+      ',' => :COMMA,
+      '{' => :LEFT_CURLY,
+      '}' => :RIGHT_CURLY,
+      '[' => :LEFT_BRACKET,
+      ']' => :RIGHT_BRACKET,
+      '(' => :LEFT_PARENTHESIS,
+      ')' => :RIGHT_PARENTHESIS,
+      '@' => :AT,
+      '$' => :DOLLAR,
+      '<' => :LESS_THAN,
+      '>' => :GREATER_THAN,
+      '!' => :NOT,
+      '~' => :BITWISE_COMPLEMENT,
+      '&' => :BITWISE_AND,
+      '|' => :BITWISE_OR,
+      '^' => :BITWISE_XOR,
+      '.' => :DOT
     }.freeze
 
     KEYWORDS = {
-      'true': :TRUE,    # rubocop:disable Lint/BooleanSymbol
-      'false': :FALSE,  # rubocop:disable Lint/BooleanSymbol
-      'null': :NONE,
-      'is': :IS,
-      'in': :IN,
-      'not': :NOT,
-      'and': :AND,
-      'or': :OR
+      'true' => :TRUE,
+      'false' => :FALSE,
+      'null' => :NONE,
+      'is' => :IS,
+      'in' => :IN,
+      'not' => :NOT,
+      'and' => :AND,
+      'or' => :OR
     }.freeze
 
     ESCAPES = {
-      'a':  "\u0007",   # rubocop: disable Layout/HashAlignment
-      'b':  "\b",       # rubocop: disable Layout/HashAlignment
-      'f':  "\u000C",   # rubocop: disable Layout/HashAlignment
-      'n':  "\n",       # rubocop: disable Layout/HashAlignment
-      'r':  "\r",       # rubocop: disable Layout/HashAlignment
-      't':  "\t",       # rubocop: disable Layout/HashAlignment
-      'v':  "\u000B",   # rubocop: disable Layout/HashAlignment
-      '\\': '\\',
-      '\'': "'",
-      '"':  '"'         # rubocop: disable Layout/HashAlignment
+      'a' =>  "\u0007",   # rubocop: disable Layout/HashAlignment
+      'b' =>  "\b",       # rubocop: disable Layout/HashAlignment
+      'f' =>  "\u000C",   # rubocop:disable Layout/HashAlignment
+      'n' =>  "\n",       # rubocop:disable Layout/HashAlignment
+      'r' =>  "\r",       # rubocop:disable Layout/HashAlignment
+      't' =>  "\t",       # rubocop:disable Layout/HashAlignment
+      'v' =>  "\u000B",   # rubocop:disable Layout/HashAlignment
+      '\\' => '\\',
+      '\'' => "'",
+      '"' =>  '"'         # rubocop:disable Layout/HashAlignment
     }.freeze
 
     NULL_VALUE = Object.new
 
     KEYWORD_VALUES = {
-      :TRUE => true,        # rubocop: disable Style/HashSyntax
-      :FALSE => false,      # rubocop: disable Style/HashSyntax
-      :NONE => NULL_VALUE   # rubocop: disable Style/HashSyntax
+      TRUE: true,
+      FALSE: false,
+      NONE: NULL_VALUE
     }.freeze
-
-    # class TokenIterator < Enumerator
-      # attr_accessor :tokenizer
-
-      # def initialize(tokenizer)
-        # @tokenizer = tokenizer
-        # @more = true
-      # end
-
-      # def next
-        # if !@more
-          # raise StopIteration
-        # end
-        # result = @tokenizer.get_token
-        # @more = (result.kind != :EOF)
-        # result
-      # end
-    # end
 
     class Tokenizer
       include Utils
@@ -235,38 +216,30 @@ module CFG
         @pushed_back = []
       end
 
-      # def to_enum
-        # TokenIterator.new self
-      # end
-
       def tokens
         result = []
-        while true
+        loop do
           t = get_token
           result.push t
-          if t.kind == :EOF
-            break
-          end
+          break if t.kind == :EOF
         end
         result
       end
 
-      def push_back(c)
-        if ((c != nil) && ((c == "\n") || !white_space?(c)))
-          @pushed_back.push([c, Location.from(@char_location)])
-        end
+      def push_back(chr)
+        @pushed_back.push([chr, Location.from(@char_location)]) if !chr.nil? && ((chr == "\n") || !white_space?(chr))
       end
 
       def get_char
-        if @pushed_back.length > 0
+        if !@pushed_back.empty?
           result, loc = @pushed_back.pop
           @char_location.update loc
-          @location.update loc          # will be bumped later
+          @location.update loc # will be bumped later
         else
           @char_location.update @location
           result = @stream.read 1
         end
-        if result != nil
+        unless result.nil?
           if result == "\n"
             @location.next_line
           else
@@ -276,22 +249,19 @@ module CFG
         result
       end
 
-      def get_number(text, startloc, endloc)
+      def get_number(text, endloc)
         kind = :INTEGER
         in_exponent = false
         radix = 0
-        dot_seen = text.index('.') != nil
+        dot_seen = !text.index('.').nil?
         last_was_digit = digit?(text[-1])
 
         while true
           c = get_char
 
-          if c == nil
-            break
-          end
-          if c == '.'
-            dot_seen = true
-          end
+          break if c.nil?
+
+          dot_seen = true if c == '.'
           if c == '_'
             if last_was_digit
               text = append_char text, c, endloc
@@ -303,28 +273,28 @@ module CFG
             e.location = @char_location
             raise e
           end
-          last_was_digit = false  # unless set in one of the clauses below
-          if (((radix == 0) && (c >= '0') && (c <= '9')) ||
-              ((radix == 2) && (c >= '0') && (c <= '1')) ||
-              ((radix == 8) && (c >= '0') && (c <= '7')) ||
-              ((radix == 16) && hexdigit?(c)))
+          last_was_digit = false # unless set in one of the clauses below
+          if (radix.zero? && (c >= '0') && (c <= '9')) ||
+             ((radix == 2) && (c >= '0') && (c <= '1')) ||
+             ((radix == 8) && (c >= '0') && (c <= '7')) ||
+             ((radix == 16) && hexdigit?(c))
             text = append_char text, c, endloc
             last_was_digit = true
-          elsif (((c == 'o') || (c == 'O') || (c == 'x') ||
-                  (c == 'X') || (c == 'b') || (c == 'B')) &&
-                  (text.length == 1) && (text[0] == '0'))
-            if ((c == 'x') || (c == 'X'))
-                radix = 16
-            else
-              radix = ((c == 'o') || (c == 'O')) ? 8 : 2
-            end
+          elsif ((c == 'o') || (c == 'O') || (c == 'x') ||
+                (c == 'X') || (c == 'b') || (c == 'B')) &&
+                (text.length == 1) && (text[0] == '0')
+            radix = if c.upcase == 'X'
+                      16
+                    else
+                      (c == 'o') || (c == 'O') ? 8 : 2
+                    end
             text = append_char text, c, endloc
-          elsif ((radix == 0) && (c == '.') && !in_exponent && (text.index(c) == nil))
+          elsif radix.zero? && (c == '.') && !in_exponent && text.index(c).nil?
             text = append_char text, c, endloc
-          elsif ((radix == 0) && (c == '-') && (text.index('-', 1) == nil) && in_exponent)
+          elsif radix.zero? && (c == '-') && text.index('-', 1).nil? && in_exponent
             text = append_char text, c, endloc
-          elsif ((radix == 0) && ((c == 'e') || (c == 'E')) && (text.index('e') == nil) &&
-                 (text.index('E') == nil) && (text[-1] != '_'))
+          elsif radix.zero? && ((c == 'e') || (c == 'E')) && text.index('e').nil? &&
+                text.index('E').nil? && (text[-1] != '_')
             text = append_char text, c, endloc
             in_exponent = true
           else
@@ -334,18 +304,18 @@ module CFG
 
         # Reached the end of the actual number part. Before checking
         # for complex, ensure that the last char wasn't an underscore.
-        if (text[-1] == '_')
-            e = TokenizerError.new "Invalid '_' at end of number: #{text}"
+        if text[-1] == '_'
+          e = TokenizerError.new "Invalid '_' at end of number: #{text}"
 
-            e.location = endloc
-            raise e
+          e.location = endloc
+          raise e
         end
-        if ((radix == 0) && ((c == 'j') || (c == 'J')))
+        if radix.zero? && ((c == 'j') || (c == 'J'))
           text = append_char text, c, endloc
           kind = :COMPLEX
         else
           # not allowed to have a letter or digit which wasn't accepted
-          if ((c != '.') && !alnum?(c))
+          if (c != '.') && !alnum?(c)  # rubocop:disable Style/IfInsideElse
             push_back c
           else
             e = TokenizerError.new "Invalid character in number: #{c}"
@@ -357,59 +327,59 @@ module CFG
 
         s = text.gsub(/_/, '')
 
-        if (radix != 0)
-          value = s[2..].to_i(base=radix)
+        if radix != 0
+          value = s[2..-1].to_i radix
         elsif kind == :COMPLEX
-          imaginary = s[..-1].to_f
+          imaginary = s[0..-2].to_f
           value = Complex(0.0, imaginary)
-        elsif (in_exponent || dot_seen)
+        elsif in_exponent || dot_seen
           kind = :FLOAT
           value = s.to_f
         else
-          radix = (s[0] == '0') ? 8 : 10
-          value = s.to_i(base=radix)
+          radix = s[0] == '0' ? 8 : 10
+          value = s.to_i radix
         end
-        return text, kind, value
+        [text, kind, value]
       end
 
-      def parse_escapes(s)
-        i = s.index '\\'
-        if i == nil
-          result = s
+      def parse_escapes(str)
+        i = str.index '\\'
+        if i.nil?
+          result = str
         else
           failed = false
           result = ''
-          while i != nil
-            result += s[0..i - 1]
-            c = s[i + 1]
+          until i.nil?
+            result += str[0..i - 1]
+            c = str[i + 1]
             if ESCAPES.key?(c)
               result += ESCAPES[c]
               i += 2
             elsif c =~ /xu/i
-              if c == 'x' or c == 'X'
-                slen = 4
-              else
-                slen = c == 'u' ? 6 : 10
-              end
-              if i + n > s.length
+              slen = if c.upcase == 'X'
+                       4
+                     else
+                       c == 'u' ? 6 : 10
+                     end
+              if i + n > str.length
                 failed = true
                 break
               end
-              p = s[i + 2 .. i + slen - 1]
-              if p =~/^[[:xdigit:]]$/i
+              p = str[i + 2..i + slen - 1]
+              if p =~ /^[[:xdigit:]]$/i
                 failed = true
                 break
               end
-              j = p.to_i(base=16)
-              if j.between?(0xd800, 0xdfff) or (j >= 0x110000)
+              j = p.to_i 16
+              if j.between?(0xd800, 0xdfff) || (j >= 0x110000)
                 failed = true
                 break
               end
               result += j.chr 'utf-8'
               i += slen
             end
-            s = s[i..]
-            i = s.index '\\'
+            str = str[i..-1]
+            i = str.index '\\'
           end
           if failed
             e = TokenizerError.new "Invalid escape sequence at index #{i}"
@@ -419,8 +389,8 @@ module CFG
         result
       end
 
-      def append_char(token, c, end_location)
-        token += c
+      def append_char(token, chr, end_location)
+        token += chr
         end_location.update @char_location
         token
       end
@@ -432,15 +402,14 @@ module CFG
         token = ''
         value = nil
 
-        while true
+        loop do
           c = get_char
 
           start_location.update @char_location
           end_location.update @char_location
 
-          if c == nil
-            break
-          end
+          break if c.nil?
+
           if c == '#'
             token += c + @stream.readline.rstrip
             kind = :NEWLINE
@@ -456,15 +425,13 @@ module CFG
             break
           elsif c == "\r"
             c = get_char
-            if c != "\n"
-                push_back c
-            end
+            push_back c if c != "\n"
             kind = :NEWLINE
             break
-          elsif c == "\\"
+          elsif c == '\\'
             c = get_char
             if c != "\n"
-              e = TokenizerError.new "Unexpected character: \\"
+              e = TokenizerError.new 'Unexpected character: \\'
               e.location = @char_location
               raise e
             end
@@ -472,37 +439,32 @@ module CFG
             next
           elsif white_space?(c)
             next
-          elsif c == "_" or letter?c
+          elsif c == '_' || letter?(c)
             kind = :WORD
             token = append_char token, c, end_location
             c = get_char
-            while ((c != nil) && (alnum?(c) || (c == '_')))
-                token = append_char token, c, end_location
-                c = get_char
+            while !c.nil? && (alnum?(c) || (c == '_'))
+              token = append_char token, c, end_location
+              c = get_char
             end
             push_back c
             value = token
-            if KEYWORDS.key?(value.to_sym)
-              kind = KEYWORDS[value.to_sym]
-              if KEYWORD_VALUES.key?(kind)
-                value = KEYWORD_VALUES[kind]
-              end
+            if KEYWORDS.key?(value)
+              kind = KEYWORDS[value]
+              value = KEYWORD_VALUES[kind] if KEYWORD_VALUES.key?(kind)
             end
             break
           elsif c == '`'
             kind = :BACKTICK
             token = append_char token, c, end_location
-            while true
+            loop do
               c = get_char
-              if c == nil
-                break
-              end
+              break if c.nil?
+
               token = append_char token, c, end_location
-              if c == '`'
-                break
-              end
+              break if c == '`'
             end
-            if c == nil
+            if c.nil?
               e = TokenizerError.new "Unterminated `-string: #{token}"
               e.location = start_location
               raise e
@@ -514,7 +476,7 @@ module CFG
               raise e
             end
             break
-          elsif c == '"' or c == "'"
+          elsif !'"\''.index(c).nil?
             quote = c
             multi_line = false
             escaped = false
@@ -530,9 +492,7 @@ module CFG
               c2 = get_char
               if c2 != quote
                 push_back c2
-                if c2 == nil
-                  @char_location.update c1_loc
-                end
+                @char_location.update c1_loc if c2.nil?
                 push_back c1
               else
                 multi_line = true
@@ -541,28 +501,25 @@ module CFG
               end
             end
 
-            quoter = token[0..]
+            quoter = token[0..-1]
 
             while true
               c = get_char
-              if (c == nil)
-                break
-              end
+              break if c.nil?
+
               token = append_char token, c, end_location
-              if ((c == quote) && !escaped)
+              if (c == quote) && !escaped
                 n = token.length
 
-                if (!multi_line || (n >= 6) && (token[n - 3.. n - 1] == quoter) && token[n - 4] != '\\')
-                  break
-                end
+                break if !multi_line || (n >= 6) && (token[n - 3..n - 1] == quoter) && token[n - 4] != '\\'
               end
-              escaped = (c == '\\') ? !escaped : false
+              escaped = c == '\\' ? !escaped : false
             end
-            if (c == '\u0000')
-                e = TokenizerError.new "Unterminated quoted string: #{token}"
+            if c.nil?
+              e = TokenizerError.new "Unterminated quoted string: #{token}"
 
-                e.location = start_location
-                raise e
+              e.location = start_location
+              raise e
             end
             n = quoter.length
             begin
@@ -574,12 +531,12 @@ module CFG
             break
           elsif digit?(c)
             token = append_char token, c, end_location
-            token, kind, value = get_number token, start_location, end_location
+            token, kind, value = get_number token, end_location
             break
           elsif c == '='
             nc = get_char
 
-            if (nc != '=')
+            if nc != '='
               kind = :ASSIGN
               token = append_char token, c, end_location
               push_back nc
@@ -589,8 +546,8 @@ module CFG
               token = append_char token, c, end_location
             end
             break
-          elsif PUNCTUATION.key?(c.to_sym)
-            kind = PUNCTUATION[c.to_sym]
+          elsif PUNCTUATION.key?(c)
+            kind = PUNCTUATION[c]
             token = append_char token, c, end_location
             if c == '.'
               c = get_char
@@ -598,7 +555,7 @@ module CFG
                 push_back c
               else
                 token = append_char token, c, end_location
-                token, kind, value = get_number token, start_location, end_location
+                token, kind, value = get_number token, end_location
               end
             elsif c == '-'
               c = get_char
@@ -606,7 +563,7 @@ module CFG
                 push_back c
               else
                 token = append_char token, c, end_location
-                token, kind, value = get_number token, start_location, end_location
+                token, kind, value = get_number token, end_location
               end
             elsif c == '<'
               c = get_char
@@ -635,7 +592,7 @@ module CFG
               end
             elsif c == '!'
               c = get_char
-              if (c == '=')
+              if c == '='
                 kind = :UNEQUAL
                 token = append_char token, c, end_location
               else
@@ -660,10 +617,10 @@ module CFG
             elsif (c == '&') || (c == '|')
               c2 = get_char
 
-              if (c2 != c)
+              if c2 != c
                 push_back c2
               else
-                kind = (c2 == '&') ? :AND : :OR
+                kind = c2 == '&' ? :AND : :OR
                 token = append_char token, c, end_location
               end
             end
@@ -679,7 +636,6 @@ module CFG
         result.end = Location.from end_location
         result
       end
-
     end
   end
 end
