@@ -324,7 +324,7 @@ module CFG
           kind = :COMPLEX
         else
           # not allowed to have a letter or digit which wasn't accepted
-          if (c != '.') && !alnum?(c)  # rubocop:disable Style/IfInsideElse
+          if (c != '.') && !alnum?(c) # rubocop:disable Style/IfInsideElse
             push_back c
           else
             e = TokenizerError.new "Invalid character in number: #{c}"
@@ -659,6 +659,146 @@ module CFG
         result = Token.new kind, token, value
         result.start = Location.from start_location
         result.end = Location.from end_location
+        result
+      end
+    end
+
+    class UnaryNode < ASTNode
+      attr_reader :operand
+
+      def initialize(kind, operand)
+        super(kind)
+        @operand = operand
+      end
+
+      def to_s
+        "UnaryNode(#{@kind}, #{@operand})"
+      end
+    end
+
+    class BinaryNode < ASTNode
+      attr_reader :lhs
+      attr_reader :rhs
+
+      def initialize(kind, lhs, rhs)
+        super(kind)
+        @lhs = lhs
+        @rhs = rhs
+      end
+
+      def to_s
+        "BinaryNode(#{@kind}, #{@lhs}, #{@rhs})"
+      end
+    end
+
+    class SliceNode < ASTNode
+      attr_reader :start_index
+      attr_reader :stop_index
+      attr_reader :step
+
+      def initialize(start_index, stop_index, step)
+        super(:COLON)
+        @start_index = start_index
+        @stop_index = stop_index
+        @step = step
+      end
+
+      def to_s
+        "SliceNode(#{@start_index}:#{@stop_index}:#{@step})"
+      end
+    end
+
+    class ListNode < ASTNode
+      attr_reader :elements
+
+      def initialize(elements)
+        super(:LEFT_BRACKET)
+        @elements = elements
+      end
+    end
+
+    class MappingNode < ASTNode
+      attr_reader :elements
+
+      def initialize(elements)
+        super(:LEFT_CURLY)
+        @elements = elements
+      end
+    end
+
+    class Parser
+      attr_reader :tokenizer
+      attr_reader :next_token
+
+      def initialize(stream)
+        @tokenizer = Tokenizer.new stream
+        @next_token = @tokenizer.get_token
+      end
+
+      def at_end
+        @next_token.kind == :EOF
+      end
+
+      def advance
+        @next_token = @tokenizer.get_token
+        @next_token.kind
+      end
+
+      def expect(kind)
+        if @next_token.kind != kind
+          e = ParserError.new "Expected #{kind} but got #{@next_token.kind}"
+          e.location = @next_token.start
+          raise e
+        end
+        result = @next_token
+        advance
+        result
+      end
+
+      def consume_newlines
+        result = @next_token.kind
+
+        result = advance while result == :NEWLINE
+        result
+      end
+
+      EXPRESSION_STARTERS = Set[
+        :LEFT_CURLY, :LEFT_BRACKET, :LEFT_PARENTHESIS,
+        :AT, :DOLLAR, :BACKTICK, :PLUS, :MINUS, :BITWISE_COMPLEMENT,
+        :INTEGER, :FLOAT, :COMPLEX, :TRUE, :FALSE,
+        :NONE, :NOT, :STRING, :WORD
+      ]
+
+      VALUE_STARTERS = Set[
+        :WORD, :INTEGER, :FLOAT, :COMPLEX, :STRING, :BACKTICK,
+        :NONE, :TRUE, :FALSE
+      ]
+
+      def strings
+        result = @next_token
+        if advance != :STRING
+          all_text = ''
+          all_value = ''
+          t = result.text
+          v = result.value
+          start = result.start
+          endpos = result.end
+
+          loop do
+            all_text += t
+            all_value += v
+            t = @next_token.text
+            v = @next_token.value
+            endpos = @next_token.end
+            kind = advance
+            break if kind != :STRING
+          end
+          all_text += t # the last one
+          all_value += v
+          result = Token.new :STRING, all_text, all_value
+          result.start.update start
+          result.end.update endpos
+        end
         result
       end
     end
