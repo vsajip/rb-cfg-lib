@@ -7,6 +7,17 @@ def make_tokenizer(src)
   CFG::Config::Tokenizer.new stream
 end
 
+def make_parser(src)
+  stream = StringIO.new src, 'r:utf-8'
+  CFG::Config::Parser.new stream
+end
+
+def parse(src, rule = 'mapping_body')
+  p = make_parser src
+  assert p.respond_to? rule
+  p.public_send rule
+end
+
 def make_token(kind, text, value, sline, scol, eline, ecol)
   spos = CFG::Config::Location.new sline, scol
   epos = CFG::Config::Location.new eline, ecol
@@ -317,5 +328,161 @@ class TokenizerTest < Minitest::Test
         refute_nil e.message.index 'Invalid escape sequence'
       end
     end
+  end
+end
+
+class ParserTest < Minitest::Test
+  def test_token_values
+    p = make_parser 'a + 4'
+    # require 'byebug'; byebug
+    node = p.expr
+    refute_nil node
+    assert_equal :PLUS, node.kind
+    t = node.lhs
+    refute_nil t
+    assert_equal :WORD, t.kind
+    assert_equal 'a', t.value
+    t = node.rhs
+    refute_nil t
+    assert_equal :INTEGER, t.kind
+    assert_equal 4, t.value
+  end
+
+  def test_fragments
+    node = parse 'foo', 'expr'
+    assert_equal 'foo', node.value
+    node = parse '0.5', 'expr'
+    assert_equal :FLOAT, node.kind
+    assert_equal 0.5, node.value
+    node = parse "'foo' \"bar\"", 'expr'
+    assert_equal :STRING, node.kind
+    assert_equal 'foobar', node.value
+    node = parse 'a.b', 'expr'
+    assert_equal :DOT, node.kind
+    assert_equal 'a', node.lhs.value
+    assert_equal 'b', node.rhs.value
+  end
+
+  def test_unaries
+    ops = ['+', '-', '~', 'not ', '@']
+
+    ops.each do |op|
+      s = "#{op}foo"
+      kind = make_tokenizer(op).get_token.kind
+      node = parse s, 'expr'
+      refute_nil node
+      assert_equal kind, node.kind
+      assert_equal 'foo', node.operand.value
+    end
+  end
+
+  def expressions(ops, rule, multiple = true)
+    ops.each do |op|
+      kind = make_tokenizer(op).get_token.kind
+      src = "foo#{op}bar"
+      node = parse src, rule
+      refute_nil node
+      assert_equal kind, node.kind
+      assert_equal 'foo', node.lhs.value
+      assert_equal 'bar', node.rhs.value
+      next unless multiple
+
+      100.times do
+        op1 = ops.sample
+        op2 = ops.sample
+        k1 = make_tokenizer(op1).get_token.kind
+        k2 = make_tokenizer(op2).get_token.kind
+        src = "foo#{op1}bar#{op2}baz"
+        node = parse src, rule
+        refute_nil node
+        assert_equal k2, node.kind
+        assert_equal 'baz', node.rhs.value
+        assert_equal k1, node.lhs.kind
+        assert_equal 'foo', node.lhs.lhs.value
+        assert_equal 'bar', node.lhs.rhs.value
+      end
+    end
+  end
+
+  def test_binaries
+    expressions ['*', '/', '//', '%'], 'mul_expr'
+    expressions ['+', '-'], 'add_expr'
+    expressions ['<<', '>>'], 'shift_expr'
+    expressions ['&'], 'bitand_expr'
+    expressions ['^'], 'bitxor_expr'
+    expressions ['|'], 'bitor_expr'
+    expressions ['**'], 'power', false
+    node = parse 'foo**bar**baz', 'power'
+
+    assert_equal :POWER, node.kind
+    assert_equal :WORD, node.lhs.kind
+    assert_equal 'foo', node.lhs.value
+    assert_equal :POWER, node.rhs.kind
+    assert_equal 'bar', node.rhs.lhs.value
+    assert_equal 'baz', node.rhs.rhs.value
+
+    # require 'byebug'; byebug
+    node = parse 'foo is not bar', 'comparison'
+    refute_nil node
+    assert_equal :IS_NOT, node.kind
+    assert_equal 'foo', node.lhs.value
+    assert_equal 'bar', node.rhs.value
+
+    node = parse 'foo not in bar', 'comparison'
+    refute_nil node
+    assert_equal :NOT_IN, node.kind
+    assert_equal 'foo', node.lhs.value
+    assert_equal 'bar', node.rhs.value
+
+    expressions ['<=', '<>', '<', '>=', '>', '==', '!=', ' in ', ' is '], 'comparison', false
+    expressions [' and ', '&&'], 'and_expr'
+    expressions [' or ', '||'], 'expr'
+  end
+
+  def test_atoms
+    ['[1, 2, 3]', '[1, 2, 3,]'].each do |s|
+      node = parse s, 'atom'
+
+      refute_nil node
+      node.elements.each_with_index do |t, i|
+        assert_equal i + 1, t.value
+      end
+    end
+  end
+
+  def test_data
+    path = data_file_path 'testdata.txt'
+    cases = load_data path
+
+    expected_messages = {
+      'D01' => 'Unexpected type for key: INTEGER',
+      'D02' => 'Unexpected type for key: LEFT_BRACKET',
+      'D03' => 'Unexpected type for key: LEFT_CURLY'
+    }
+
+    cases.each do |k, v|
+      p = make_parser v
+      if k < 'D01'
+        node = p.mapping_body
+        refute_nil node
+        assert p.at_end
+      else
+        begin
+          p.mapping_body
+        rescue CFG::Config::RecognizerError => e
+          assert_equal expected_messages[k], e.message if expected_messages.include? k
+        end
+      end
+    end
+  end
+
+  def test_json
+    path = data_file_path 'forms.conf'
+    f = File.open path, 'r:utf-8'
+    parser = CFG::Config::Parser.new f
+    node = parser.mapping
+    refute_nil node
+    keys = node.elements.map { |item| item[0].value }
+    assert_equal %w[refs fieldsets forms modals pages], keys
   end
 end

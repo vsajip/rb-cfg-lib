@@ -748,6 +748,7 @@ module CFG
         if @next_token.kind != kind
           e = ParserError.new "Expected #{kind} but got #{@next_token.kind}"
           e.location = @next_token.start
+          # require 'byebug'; byebug
           raise e
         end
         result = @next_token
@@ -776,7 +777,7 @@ module CFG
 
       def strings
         result = @next_token
-        if advance != :STRING
+        if advance == :STRING
           all_text = ''
           all_value = ''
           t = result.text
@@ -796,8 +797,8 @@ module CFG
           all_text += t # the last one
           all_value += v
           result = Token.new :STRING, all_text, all_value
-          result.start.update start
-          result.end.update endpos
+          result.start = start
+          result.end = endpos
         end
         result
       end
@@ -854,7 +855,7 @@ module CFG
 
       def _get_slice_element
         lb = list_body
-        val size = lb.elements.length
+        size = lb.elements.length
 
         _invalid_index(size, lb.start) unless size == 1
         lb.elements[0]
@@ -919,9 +920,10 @@ module CFG
       def primary
         result = atom
         kind = @next_token.kind
-        if %i[DOT LEFT_BRACKET].include? kind
+        while %i[DOT LEFT_BRACKET].include? kind
           op, rhs = trailer
           result = BinaryNode.new op, result, rhs
+          kind = @next_token.kind
         end
         result
       end
@@ -984,7 +986,7 @@ module CFG
           break unless %i[NEWLINE COMMA].include? kind
 
           advance
-          consume_newlines
+          kind = consume_newlines
         end
         ListNode.new result
       end
@@ -1028,7 +1030,7 @@ module CFG
       def unary_expr
         kind = @next_token.kind
         spos = @next_token.start
-        result = if %i[PLUS MINUS BITWISE_COMPLEMENT AT].include? kind
+        result = if !%i[PLUS MINUS BITWISE_COMPLEMENT AT].include? kind
                    power
                  else
                    advance
@@ -1107,6 +1109,7 @@ module CFG
       def comp_op
         result = @next_token.kind
         should_advance = false
+        advance
         if result == :IS && @next_token.kind == :NOT
           result = :IS_NOT
           should_advance = true
