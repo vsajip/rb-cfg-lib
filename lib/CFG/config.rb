@@ -801,6 +801,363 @@ module CFG
         end
         result
       end
+
+      def value
+        kind = @next_token.kind
+        unless VALUE_STARTERS.include? kind
+          e = ParserError.new "Unexpected when looking for value: #{kind}"
+          e.location = @next_token.start
+          raise e
+        end
+        if kind == :STRING
+          result = strings
+        else
+          result = @next_token
+          advance
+        end
+        result
+      end
+
+      def atom
+        kind = @next_token.kind
+        case kind
+        when :LEFT_CURLY
+          result = mapping
+        when :LEFT_BRACKET
+          result = list
+        when :DOLLAR
+          expect :DOLLAR
+          expect :LEFT_CURLY
+          spos = @next_token.start
+          result = UnaryNode.new :DOLLAR, primary
+          result.start = spos
+          expect :RIGHT_CURLY
+        when :WORD, :INTEGER, :FLOAT, :COMPLEX, :STRING, :BACKTICK, :TRUE, :FALSE, :NONE
+          result = value
+        when :LEFT_PARENTHESIS
+          expect :LEFT_PARENTHESIS
+          result = expr
+          expect :RIGHT_PARENTHESIS
+        else
+          e = ParserError.new "Unexpected: #{kind}"
+          e.location = @next_token.start
+          raise e
+        end
+        result
+      end
+
+      def _invalid_index(num, pos)
+        e = ParserError.new "Invalid index at #{pos}: expected 1 expression, found #{num}"
+        e.location = pos
+        raise e
+      end
+
+      def _get_slice_element
+        lb = list_body
+        val size = lb.elements.length
+
+        _invalid_index(size, lb.start) unless size == 1
+        lb.elements[0]
+      end
+
+      def _try_get_step
+        kind = advance
+        kind == :LEFT_BRACKET ? nil : _get_slice_element
+      end
+
+      def trailer
+        op = @next_token.kind
+
+        if op != :LEFT_BRACKET
+          expect :DOT
+          result = expect :WORD
+        else
+          kind = advance
+          is_slice = false
+          start_index = nil
+          stop_index = nil
+          step = nil
+
+          if kind == :COLON
+            # it's a slice like [:xyz:abc]
+            is_slice = true
+          else
+            elem = _get_slice_element
+
+            kind = @next_token.kind
+            if kind != :COLON
+              result = elem
+            else
+              start_index = elem
+              is_slice = true
+            end
+          end
+          if is_slice
+            op = :COLON
+            # at this point startIndex is either nil (if foo[:xyz]) or a
+            # value representing the start. We are pointing at the COLON
+            # after the start value
+            kind = advance
+            if kind == :COLON # no stop, but there might be a step
+              s = _try_get_step
+              step = s unless s.nil?
+            elsif kind != :RIGHT_BRACKET
+              stop_index = _get_slice_element
+              kind = @next_token.kind
+              if kind == :COLON
+                s = _try_get_step
+                step = s unless s.nil?
+              end
+            end
+            result = SliceNode.new start_index, stop_index, step
+          end
+          expect :RIGHT_BRACKET
+        end
+        [op, result]
+      end
+
+      def primary
+        result = atom
+        kind = @next_token.kind
+        if %i[DOT LEFT_BRACKET].include? kind
+          op, rhs = trailer
+          result = BinaryNode.new op, result, rhs
+        end
+        result
+      end
+
+      def object_key
+        if @next_token.kind == :STRING
+          result = strings
+        else
+          result = @next_token
+          advance
+        end
+        result
+      end
+
+      def mapping_body
+        result = []
+        kind = consume_newlines
+        if kind != :RIGHT_CURLY && kind != :EOF
+          if kind != :WORD && kind != :STRING
+            e = ParserError.new "Unexpected type for key: #{kind}"
+
+            e.location = @next_token.start
+            raise e
+          end
+          while %i[WORD STRING].include? kind
+            key = object_key
+            kind = @next_token.kind
+            if kind != :COLON && kind != :ASSIGN
+              e = ParserError.new "Expected key-value separator, found: #{kind}"
+
+              e.location = @next_token.start
+              raise e
+            end
+            advance
+            consume_newlines
+            result.push [key, expr]
+            kind = @next_token.kind
+            if %i[NEWLINE COMMA].include? kind
+              advance
+              kind = consume_newlines
+            end
+          end
+        end
+        MappingNode.new result
+      end
+
+      def mapping
+        expect :LEFT_CURLY
+        result = mapping_body
+        expect :RIGHT_CURLY
+        result
+      end
+
+      def list_body
+        result = []
+        kind = consume_newlines
+        while EXPRESSION_STARTERS.include? kind
+          result.push(expr)
+          kind = @next_token.kind
+          break unless %i[NEWLINE COMMA].include? kind
+
+          advance
+          consume_newlines
+        end
+        ListNode.new result
+      end
+
+      def list
+        expect :LEFT_BRACKET
+        result = list_body
+        expect :RIGHT_BRACKET
+        result
+      end
+
+      def container
+        kind = consume_newlines
+
+        case kind
+        when :LEFT_CURLY
+          result = mapping
+        when :LEFT_BRACKET
+          result = list
+        when :WORD, :STRING, :EOF
+          result = mapping_body
+        else
+          e = ParserError.new "Unexpected type for container: #{kind}"
+
+          e.location = @next_token.start
+          raise e
+        end
+        consume_newlines
+        result
+      end
+
+      def power
+        result = primary
+        while @next_token.kind == :POWER
+          advance
+          result = BinaryNode.new :POWER, result, unary_expr
+        end
+        result
+      end
+
+      def unary_expr
+        kind = @next_token.kind
+        spos = @next_token.start
+        result = if %i[PLUS MINUS BITWISE_COMPLEMENT AT].include? kind
+                   power
+                 else
+                   advance
+                   UnaryNode.new kind, unary_expr
+                 end
+        result.start = spos
+        result
+      end
+
+      def mul_expr
+        result = unary_expr
+        kind = @next_token.kind
+
+        while %i[STAR SLASH SLASH_SLASH MODULO].include? kind
+          advance
+          result = BinaryNode.new kind, result, unary_expr
+          kind = @next_token.kind
+        end
+        result
+      end
+
+      def add_expr
+        result = mul_expr
+        kind = @next_token.kind
+
+        while %i[PLUS MINUS].include? kind
+          advance
+          result = BinaryNode.new kind, result, mul_expr
+          kind = @next_token.kind
+        end
+        result
+      end
+
+      def shift_expr
+        result = add_expr
+        kind = @next_token.kind
+
+        while %i[LEFT_SHIFT RIGHT_SHIFT].include? kind
+          advance
+          result = BinaryNode.new kind, result, add_expr
+          kind = @next_token.kind
+        end
+        result
+      end
+
+      def bitand_expr
+        result = shift_expr
+
+        while @next_token.kind == :BITWISE_AND
+          advance
+          result = BinaryNode.new :BITWISE_AND, result, shift_expr
+        end
+        result
+      end
+
+      def bitxor_expr
+        result = bitand_expr
+
+        while @next_token.kind == :BITWISE_XOR
+          advance
+          result = BinaryNode.new :BITWISE_XOR, result, bitand_expr
+        end
+        result
+      end
+
+      def bitor_expr
+        result = bitxor_expr
+
+        while @next_token.kind == :BITWISE_OR
+          advance
+          result = BinaryNode.new :BITWISE_OR, result, bitxor_expr
+        end
+        result
+      end
+
+      def comp_op
+        result = @next_token.kind
+        should_advance = false
+        if result == :IS && @next_token.kind == :NOT
+          result = :IS_NOT
+          should_advance = true
+        elsif result == :NOT && @next_token.kind == :IN
+          result = :NOT_IN
+          should_advance = true
+        end
+        advance if should_advance
+        result
+      end
+
+      COMPARISON_OPERATORS = Set[
+        :LESS_THAN, :LESS_THAN_OR_EQUAL, :GREATER_THAN, :GREATER_THAN_OR_EQUAL,
+        :EQUAL, :UNEQUAL, :ALT_UNEQUAL, :IS, :IN, :NOT
+      ]
+
+      def comparison
+        result = bitor_expr
+        while COMPARISON_OPERATORS.include? @next_token.kind
+          op = comp_op
+          result = BinaryNode.new op, result, bitor_expr
+        end
+        result
+      end
+
+      def not_expr
+        if @next_token.kind != :NOT
+          comparison
+        else
+          advance
+          UnaryNode.new :NOT, not_expr
+        end
+      end
+
+      def and_expr
+        result = not_expr
+        while @next_token.kind == :AND
+          advance
+          result = BinaryNode.new :AND, result, not_expr
+        end
+        result
+      end
+
+      def expr
+        result = and_expr
+        while @next_token.kind == :OR
+          advance
+          result = BinaryNode.new :OR, result, and_expr
+        end
+        result
+      end
     end
   end
 end
