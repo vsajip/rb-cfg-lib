@@ -674,6 +674,10 @@ module CFG
       def to_s
         "UnaryNode(#{@kind}, #{@operand})"
       end
+
+      def ==(other)
+        @kind == other.kind && @operand == other.operand
+      end
     end
 
     class BinaryNode < ASTNode
@@ -688,6 +692,10 @@ module CFG
 
       def to_s
         "BinaryNode(#{@kind}, #{@lhs}, #{@rhs})"
+      end
+
+      def ==(other)
+        @kind == other.kind && @lhs == other.lhs && @rhs == other.rhs
       end
     end
 
@@ -705,6 +713,11 @@ module CFG
 
       def to_s
         "SliceNode(#{@start_index}:#{@stop_index}:#{@step})"
+      end
+
+      def ==(other)
+        @kind == other.kind && @start_index == other.start_index &&
+          @stop_index == other.stop_index && @step == other.step
       end
     end
 
@@ -863,7 +876,7 @@ module CFG
 
       def _try_get_step
         kind = advance
-        kind == :LEFT_BRACKET ? nil : _get_slice_element
+        kind == :RIGHT_BRACKET ? nil : _get_slice_element
       end
 
       def trailer
@@ -941,6 +954,7 @@ module CFG
       def mapping_body
         result = []
         kind = consume_newlines
+        spos = @next_token.start
         if kind != :RIGHT_CURLY && kind != :EOF
           if kind != :WORD && kind != :STRING
             e = ParserError.new "Unexpected type for key: #{kind}"
@@ -967,7 +981,9 @@ module CFG
             end
           end
         end
-        MappingNode.new result
+        result = MappingNode.new result
+        result.start = spos
+        result
       end
 
       def mapping
@@ -980,6 +996,7 @@ module CFG
       def list_body
         result = []
         kind = consume_newlines
+        spos = @next_token.start
         while EXPRESSION_STARTERS.include? kind
           result.push(expr)
           kind = @next_token.kind
@@ -988,7 +1005,9 @@ module CFG
           advance
           kind = consume_newlines
         end
-        ListNode.new result
+        result = ListNode.new result
+        result.start = spos
+        result
       end
 
       def list

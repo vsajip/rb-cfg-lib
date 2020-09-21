@@ -2,14 +2,16 @@ require 'stringio'
 
 require 'test_helper'
 
+include CFG::Config
+
 def make_tokenizer(src)
   stream = StringIO.new src, 'r:utf-8'
-  CFG::Config::Tokenizer.new stream
+  Tokenizer.new stream
 end
 
 def make_parser(src)
   stream = StringIO.new src, 'r:utf-8'
-  CFG::Config::Parser.new stream
+  Parser.new stream
 end
 
 def parse(src, rule = 'mapping_body')
@@ -18,10 +20,12 @@ def parse(src, rule = 'mapping_body')
   p.public_send rule
 end
 
-def make_token(kind, text, value, sline, scol, eline, ecol)
-  spos = CFG::Config::Location.new sline, scol
-  epos = CFG::Config::Location.new eline, ecol
-  result = CFG::Config::Token.new kind, text, value
+def make_token(kind, text, value, sline, scol, eline = nil, ecol = nil)
+  spos = Location.new sline, scol
+  eline = sline if eline.nil?
+  ecol = scol + (text.length.positive? ? text.length - 1 : text.length) if ecol.nil?
+  epos = Location.new eline, ecol
+  result = Token.new kind, text, value
   result.start = spos
   result.end = epos
   result
@@ -52,27 +56,27 @@ end
 
 class PackageTest < Minitest::Test
   def test_valid_version
-    refute_nil CFG::Config::VERSION
+    refute_nil VERSION
   end
 end
 
 class LocationTest < Minitest::Test
   def test_location
-    loc1 = CFG::Config::Location.new
+    loc1 = Location.new
     assert loc1.line == 1
     assert loc1.column == 1
     loc1.next_line
     loc1.next_line
     assert loc1.line == 3
     assert loc1.column == 1
-    loc2 = CFG::Config::Location.new
+    loc2 = Location.new
     assert loc2.line == 1
     assert loc2.column == 1
     loc2.update loc1
     assert loc2.line == 3
     assert loc2.column == 1
     assert loc2.to_s == '(3, 1)'
-    loc3 = CFG::Config::Location.from loc1
+    loc3 = Location.from loc1
     assert loc3.line == 3
     assert loc3.column == 1
   end
@@ -80,14 +84,14 @@ end
 
 class TokenTest < Minitest::Test
   def test_token
-    t = CFG::Config::Token.new(:EOF, '')
+    t = Token.new(:EOF, '')
     assert_equal 'Token(EOF, "", nil)', t.to_s
   end
 end
 
 class TokenizerTest < Minitest::Test
   def test_init
-    t = CFG::Config::Tokenizer.new(nil)
+    t = Tokenizer.new(nil)
     refute_nil t
   end
 
@@ -175,7 +179,7 @@ class TokenizerTest < Minitest::Test
 
     assert_equal false, make_tokenizer('false').get_token.value
     assert_equal false, make_tokenizer('false').get_token.value
-    assert_equal CFG::Config::NULL_VALUE, make_tokenizer('null').get_token.value
+    assert_equal NULL_VALUE, make_tokenizer('null').get_token.value
   end
 
   def test_data
@@ -183,14 +187,14 @@ class TokenizerTest < Minitest::Test
     cases = load_data path
     expected = {
       'C25' => [
-        make_token(:WORD, 'unicode', 'unicode', 1, 1, 1, 7),
-        make_token(:ASSIGN, '=', nil, 1, 9, 1, 9),
-        make_token(:STRING, "'Grüß Gott'", 'Grüß Gott', 1, 11, 1, 21),
+        make_token(:WORD, 'unicode', 'unicode', 1, 1),
+        make_token(:ASSIGN, '=', nil, 1, 9),
+        make_token(:STRING, "'Grüß Gott'", 'Grüß Gott', 1, 11),
         make_token(:NEWLINE, "\n", nil, 1, 22, 2, 0),
-        make_token(:WORD, 'more_unicode', 'more_unicode', 2, 1, 2, 12),
-        make_token(:COLON, ':', nil, 2, 13, 2, 13),
-        make_token(:STRING, "'Øresund'", 'Øresund', 2, 15, 2, 23),
-        make_token(:EOF, '', nil, 2, 24, 2, 24)
+        make_token(:WORD, 'more_unicode', 'more_unicode', 2, 1),
+        make_token(:COLON, ':', nil, 2, 13),
+        make_token(:STRING, "'Øresund'", 'Øresund', 2, 15),
+        make_token(:EOF, '', nil, 2, 24)
       ]
     }
     cases.each do |k, v|
@@ -214,7 +218,7 @@ class TokenizerTest < Minitest::Test
     f.close
     path = data_file_path 'forms.cfg'
     f = File.open path, 'r:utf-8'
-    tokenizer = CFG::Config::Tokenizer.new f
+    tokenizer = Tokenizer.new f
     tokens = tokenizer.tokens
     f.close
     assert_equal tokens.length, expected.length
@@ -268,7 +272,7 @@ class TokenizerTest < Minitest::Test
       begin
         t = tokenizer.get_token
         assert_nil t
-      rescue CFG::Config::RecognizerError => e
+      rescue RecognizerError => e
         loc = e.location
         refute_nil e.message.index(msg)
         assert_equal line, loc.line
@@ -324,7 +328,7 @@ class TokenizerTest < Minitest::Test
     bad.each do |s|
       begin
         make_tokenizer(s).get_token
-      rescue CFG::Config::RecognizerError => e
+      rescue RecognizerError => e
         refute_nil e.message.index 'Invalid escape sequence'
       end
     end
@@ -469,7 +473,7 @@ class ParserTest < Minitest::Test
       else
         begin
           p.mapping_body
-        rescue CFG::Config::RecognizerError => e
+        rescue RecognizerError => e
           assert_equal expected_messages[k], e.message if expected_messages.include? k
         end
       end
@@ -479,10 +483,106 @@ class ParserTest < Minitest::Test
   def test_json
     path = data_file_path 'forms.conf'
     f = File.open path, 'r:utf-8'
-    parser = CFG::Config::Parser.new f
+    parser = Parser.new f
     node = parser.mapping
     refute_nil node
     keys = node.elements.map { |item| item[0].value }
     assert_equal %w[refs fieldsets forms modals pages], keys
+  end
+
+  def test_unexpected
+    cases = [
+      ['{foo', 'mapping', 'Expected key-value separator, found: EOF', 1, 5],
+      ['   :', 'value', 'Unexpected when looking for value: COLON', 1, 4],
+      ['   :', 'atom', 'Unexpected: COLON', 1, 4],
+    ]
+    cases.each do |item|
+      src, rule, msg, line, col = item
+      begin
+        parse src, rule
+      rescue RecognizerError => e
+        assert_equal msg, e.message
+        assert_equal line, e.location.line
+        assert_equal col, e.location.column
+      end
+    end
+  end
+
+  def test_files
+    path = data_file_path 'derived'
+    Dir.new(path).children.each do |fn|
+      fn = File.expand_path fn, path
+      f = File.open fn, 'r:utf-8'
+      p = Parser.new f
+      node = p.container
+      refute_nil node
+      f.close
+    end
+  end
+
+  def word_token(word, sline, scol)
+    make_token(:WORD, word, word, sline, scol)
+  end
+
+  def test_slices
+    cases = [
+      ['foo[start:stop:step]', [['start', 5], ['stop', 11], ['step', 16]]],
+      ['foo[start:stop]', [['start', 5], ['stop', 11], nil]],
+      ['foo[start:stop:]', [['start', 5], ['stop', 11], nil]],
+      ['foo[start:]', [['start', 5], nil, nil]],
+      ['foo[start::]', [['start', 5], nil, nil]],
+      ['foo[:stop]', [nil, ['stop', 6], nil]],
+      ['foo[:stop:]', [nil, ['stop', 6], nil]],
+      ['foo[::step]', [nil, nil, ['step', 7]]],
+      ['foo[::]', [nil, nil, nil]],
+      ['foo[:]', [nil, nil, nil]],
+      ['foo[start::step]', [['start', 5], nil, ['step', 12]]],
+    ]
+
+    cases.each do |item|
+      src, params = item
+      node = parse src, 'expr'
+      refute_nil node
+      lhs = word_token 'foo', 1, 1
+      args = []
+      params.each do |p|
+        if p.nil?
+          arg = nil
+        else
+          word, scol = p
+          arg = word_token word, 1, scol
+        end
+        args.push arg
+      end
+      rhs = SliceNode.new(*args)
+      expected = BinaryNode.new :COLON, lhs, rhs
+      assert_equal expected, node
+    end
+
+    # non-slice case
+    node = parse 'foo[start]', 'expr'
+    refute_nil node
+    lhs = word_token 'foo', 1, 1
+    rhs = word_token 'start', 1, 5
+    expected = BinaryNode.new :LEFT_BRACKET, lhs, rhs
+    assert_equal expected, node
+
+    # failure cases
+    cases = [
+      ['foo[start::step:]', 'Expected RIGHT_BRACKET but got COLON', 1, 16],
+      ['foo[a, b:c:d]', 'expected 1 expression, found 2', 1, 5],
+      ['foo[a:b, c:d]', 'expected 1 expression, found 2', 1, 7],
+      ['foo[a:b:c,d, e]', 'expected 1 expression, found 3', 1, 9],
+    ]
+    cases.each do |item|
+      src, msg, line, col = item
+      begin
+        parse src, 'expr'
+      rescue RecognizerError => e
+        refute_nil e.message.index msg
+        assert_equal line, e.location.line
+        assert_equal col, e.location.column
+      end
+    end
   end
 end
