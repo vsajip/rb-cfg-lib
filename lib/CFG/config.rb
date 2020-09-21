@@ -1227,6 +1227,30 @@ module CFG
       result
     end
 
+    def _visit(node, collector)
+      if node.is_a? Token
+        collector.push node
+      elsif node.is_a? UnaryNode
+        _visit(node.operand, collector)
+      elsif node.is_a? BinaryNode
+        _visit(node.lhs, collector)
+        case node.kind
+        when :DOT
+          collector.push [node.kind, node.rhs.value]
+        when :COLON # it's a slice
+          collector.push [node.kind, node.rhs]
+        else # it's an array access
+          collector.push [node.kind, node.rhs.value]
+        end
+      end
+    end
+
+    def unpack_path(start)
+      result = []
+      _visit(start, result)
+      result
+    end
+
     class Config
       attr_accessor :no_duplicates
       attr_accessor :strict_conversions

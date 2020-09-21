@@ -321,6 +321,10 @@ class TokenizerTest < Minitest::Test
   end
 end
 
+def word_token(word, sline, scol)
+  make_token(:WORD, word, word, sline, scol)
+end
+
 class ParserTest < Minitest::Test
   def test_token_values
     p = make_parser 'a + 4'
@@ -506,10 +510,6 @@ class ParserTest < Minitest::Test
     end
   end
 
-  def word_token(word, sline, scol)
-    make_token(:WORD, word, word, sline, scol)
-  end
-
   def test_slices
     cases = [
       ['foo[start:stop:step]', [['start', 5], ['stop', 11], ['step', 16]]],
@@ -631,5 +631,19 @@ class ConfigTest < Minitest::Test
       is_it = Config.identifier? str
       assert_equal it_is, is_it, "Failed at #{i} for #{str}"
     end
+  end
+
+  def test_path_iteration
+    node = parse_path 'foo[bar].baz.bozz[3].fizz '
+    parts = unpack_path(node)
+    expected = [
+      word_token('foo', 1, 1),
+      [:LEFT_BRACKET, 'bar'],
+      [:DOT, 'baz'],
+      [:DOT, 'bozz'],
+      [:LEFT_BRACKET, 3],
+      [:DOT, 'fizz'],
+    ]
+    assert_equal expected, parts
   end
 end
