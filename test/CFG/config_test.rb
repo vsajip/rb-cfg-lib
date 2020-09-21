@@ -4,16 +4,6 @@ require 'test_helper'
 
 include CFG::Config
 
-def make_tokenizer(src)
-  stream = StringIO.new src, 'r:utf-8'
-  Tokenizer.new stream
-end
-
-def make_parser(src)
-  stream = StringIO.new src, 'r:utf-8'
-  Parser.new stream
-end
-
 def parse(src, rule = 'mapping_body')
   p = make_parser src
   assert p.respond_to? rule
@@ -269,15 +259,11 @@ class TokenizerTest < Minitest::Test
     bad_things.each do |bn|
       src, msg, line, col = bn
       tokenizer = make_tokenizer src
-      begin
-        t = tokenizer.get_token
-        assert_nil t
-      rescue RecognizerError => e
-        loc = e.location
-        refute_nil e.message.index(msg)
-        assert_equal line, loc.line
-        assert_equal col, loc.column
-      end
+      e = assert_raises(RecognizerError) { tokenizer.get_token }
+      loc = e.location
+      refute_nil e.message.index(msg)
+      assert_equal line, loc.line
+      assert_equal col, loc.column
     end
   end
 
@@ -583,6 +569,67 @@ class ParserTest < Minitest::Test
         assert_equal line, e.location.line
         assert_equal col, e.location.column
       end
+    end
+  end
+end
+
+class ConfigTest < Minitest::Test
+  def test_files
+    not_mappings = Set['data.cfg', 'incl_list.cfg', 'pages.cfg', 'routes.cfg']
+    path = data_file_path 'derived'
+    Dir.new(path).children.each do |fn|
+      p = File.expand_path fn, path
+      c = Config.new
+      begin
+        c.load_file p
+      rescue ConfigError => e
+        if not_mappings.include? fn
+          assert_equal 'Root configuration must be a mapping', e.message
+        elsif fn == 'dupes.cfg'
+          refute_nil e.message.index 'Duplicate key '
+        end
+      end
+    end
+  end
+
+  def test_bad_paths
+    cases = [
+      ['foo[1, 2]', 'Invalid index at (1, 5): expected 1 expression, found 2'],
+      ['foo[1] bar', nil],
+      ['foo.123', nil],
+      ['foo.', 'Expected WORD but got EOF'],
+      ['foo[]', 'Invalid index at (1, 5): expected 1 expression, found 0'],
+      ['foo[1a]', 'Invalid character in number: a'],
+      ['4', nil]
+    ]
+    cases.each do |src, msg|
+      e = assert_raises(InvalidPathError) { parse_path src }
+      assert_equal "Invalid path: #{src}", e.message
+      assert_equal msg, e.cause.message unless e.cause.nil?
+    end
+  end
+
+  def test_identifiers
+    cases = [
+      ['foo', true],
+      ["\u0935\u092e\u0938", true],
+      ["\u73b0\u4ee3\u6c49\u8bed\u5e38\u7528\u5b57\u8868", true],
+      ['foo ', false],
+      ['foo[', false],
+      ['foo [', false],
+      ['foo.', false],
+      ['foo .', false],
+      ["\u0935\u092e\u0938.", false],
+      ["\u73b0\u4ee3\u6c49\u8bed\u5e38\u7528\u5b57\u8868.", false],
+      ['9', false],
+      ['9foo', false],
+      ['hyphenated-key', false]
+    ]
+
+    cases.each_with_index do |item, i|
+      str, it_is = item
+      is_it = Config.identifier? str
+      assert_equal it_is, is_it, "Failed at #{i} for #{str}"
     end
   end
 end

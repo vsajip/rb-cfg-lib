@@ -663,6 +663,11 @@ module CFG
       end
     end
 
+    def make_tokenizer(src)
+      stream = StringIO.new src, 'r:utf-8'
+      Tokenizer.new stream
+    end
+
     class UnaryNode < ASTNode
       attr_reader :operand
 
@@ -1179,6 +1184,140 @@ module CFG
           result = BinaryNode.new :OR, result, and_expr
         end
         result
+      end
+    end
+
+    def make_parser(src)
+      stream = StringIO.new src, 'r:utf-8'
+      Parser.new stream
+    end
+
+    class Evaluator
+      attr_reader :config
+
+      def initialize(config)
+        @config = config
+      end
+    end
+
+    class DictWrapper < Hash
+      def initialize(config)
+        @config = config
+      end
+    end
+
+    class ListWrapper < Array
+      def initialize(config)
+        @config = config
+      end
+    end
+
+    def parse_path(src)
+      parser = make_parser src
+
+      raise InvalidPathError, "Invalid path: #{src}" if parser.next_token.kind != :WORD
+
+      begin
+        result = parser.primary
+      rescue RecognizerError
+        raise InvalidPathError, "Invalid path: #{src}"
+      end
+      raise InvalidPathError, "Invalid path: #{src}" unless parser.at_end
+
+      result
+    end
+
+    class Config
+      attr_accessor :no_duplicates
+      attr_accessor :strict_conversions
+      attr_accessor :context
+      attr_accessor :include_path
+      attr_accessor :path
+      attr_accessor :root_dir
+      attr_accessor :string_converter
+
+      def initialize(path_or_reader = nil)
+        @no_duplicates = true
+        @strict_conversions = true
+        @context = {}
+        @include_path = []
+        @path = nil
+        @root_dir = nil
+        @evaluator = Evaluator.new self
+
+        @cache = nil
+        @data = nil
+        @parent = nil
+
+        return if path_or_reader.nil?
+
+        if path_or_reader.is_a? String
+          load_file path_or_reader
+        else
+          load path_or_reader
+        end
+      end
+
+      def cached
+        !@cache.nil?
+      end
+
+      def cached=(cache)
+        if !cache
+          @cache = nil
+        elsif @cache.nil?
+          @cache = {}
+        end
+      end
+
+      def self.identifier?(str)
+        !/^[\p{L}_]([\p{L}\p{Nd}_]*)$/u.match(str).nil?
+      end
+
+      def load_file(path)
+        f = File.open path, 'r:utf-8'
+        load f
+        f.close
+      end
+
+      def set_path(path)
+        @path = path
+        @root_dir = Pathname.new(path).parent
+      end
+
+      def wrap_mapping(node)
+        result = DictWrapper.new self
+        seen = @no_duplicates ? {} : nil
+        node.elements.each do |t, v|
+          k = t.value
+          unless seen.nil?
+            raise ConfigError, "Duplicate key #{k} seen at #{t.start} (previously at #{seen[k]})" if seen.include? k
+
+            seen[k] = t.start
+          end
+          result[k] = v
+        end
+        result
+      end
+
+      def wrap_list(node)
+        result = ListWrapper.new self
+        result.concat node.elements
+        result
+      end
+
+      def load(stream)
+        parser = Parser.new stream
+        node = parser.container
+        unless node.is_a? MappingNode
+          e = ConfigError.new 'Root configuration must be a mapping'
+
+          e.location = node.start
+          raise e
+        end
+        set_path stream.path if stream.is_a? File
+        @data = wrap_mapping node
+        @cache&.clear
       end
     end
   end
