@@ -1194,9 +1194,19 @@ module CFG
 
     class Evaluator
       attr_reader :config
+      attr_reader :refs_seen
 
       def initialize(config)
         @config = config
+        @refs_seen = Set.new
+      end
+
+      def evaluate(node)
+        if node.is_a? Token
+          1
+        else
+          2
+        end
       end
     end
 
@@ -1209,6 +1219,16 @@ module CFG
     class ListWrapper < Array
       def initialize(config)
         @config = config
+      end
+    end
+
+    def unwrap(obj)
+      if obj.is_a? DictWrapper
+        obj.as_dict
+      elsif obj.is_a? ListWrapper
+        obj.as_list
+      else
+        obj
       end
     end
 
@@ -1342,6 +1362,58 @@ module CFG
         set_path stream.path if stream.is_a? File
         @data = wrap_mapping node
         @cache&.clear
+      end
+
+      def get_from_path(path)
+        @evaluator.refs_seen.clear
+        evaluator.get_from_path parse_path(path)
+      end
+
+      def convert_string(str)
+        result = @string_converter.call str, self
+        raise ConfigError, "Unable to convert string #{str}" if strict_conversions && result.equal?(str)
+
+        result
+      end
+
+      def evaluated(value, evaluator = nil)
+        result = value
+        if value.is_a? ASTNode
+          e = evaluator.nil? ? @evaluator : evaluator
+          result = e.evaluate value
+        end
+        result
+      end
+
+      MISSING = Object.new
+
+      def base_get(key, default = MISSING)
+        if @cache&.include?(key)
+          result = @cache[key]
+        elsif @data.nil?
+          raise ConfigError, 'No data in configuration'
+        else
+          if @data.include? key
+            result = evaluated @data[key]
+          elsif identifier? key
+            raise ConfigError, "Not found in configuration: #{key}" if default.equal?(MISSING)
+
+            result = default
+          else
+            # not an identifier. Treat as a path
+            result = nil
+          end
+          @cache[key] = result unless @cache.nil?
+        end
+        result
+      end
+
+      def get(key, default = MISSING)
+        unwrap base_get(key, default)
+      end
+
+      def [](key)
+        get key
       end
     end
   end

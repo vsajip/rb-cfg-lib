@@ -634,16 +634,41 @@ class ConfigTest < Minitest::Test
   end
 
   def test_path_iteration
-    node = parse_path 'foo[bar].baz.bozz[3].fizz '
-    parts = unpack_path(node)
-    expected = [
-      word_token('foo', 1, 1),
-      [:LEFT_BRACKET, 'bar'],
-      [:DOT, 'baz'],
-      [:DOT, 'bozz'],
-      [:LEFT_BRACKET, 3],
-      [:DOT, 'fizz'],
+    start = make_token :INTEGER, '1', 1, 1, 5
+    stop = make_token :INTEGER, '2', 2, 1, 7
+    cases = [
+      [
+        'foo[bar].baz.bozz[3].fizz ',
+        [
+          word_token('foo', 1, 1),
+          [:LEFT_BRACKET, 'bar'],
+          [:DOT, 'baz'],
+          [:DOT, 'bozz'],
+          [:LEFT_BRACKET, 3],
+          [:DOT, 'fizz'],
+        ]
+      ],
+      [
+        'foo[1:2]',
+        [
+          word_token('foo', 1, 1),
+          [:COLON, SliceNode.new(start, stop, nil)]
+        ]
+      ],
     ]
-    assert_equal expected, parts
+    cases.each do |src, expected|
+      node = parse_path src
+      parts = unpack_path(node)
+      assert_equal expected, parts
+    end
+  end
+
+  def test_main_config
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'main.cfg'
+    config = Config.new
+    config.include_path.push data_file_path('base')
+    config.load_file fn
+    # log_conf = config['logging']
   end
 end
