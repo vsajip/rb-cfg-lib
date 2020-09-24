@@ -1,3 +1,4 @@
+require 'date'
 require 'set'
 require 'stringio'
 
@@ -1192,6 +1193,63 @@ module CFG
       Parser.new stream
     end
 
+    ISO_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})
+                            (([ T])(((\d{2}):(\d{2}):(\d{2}))(\.\d{1,6})?
+                            (([+-])(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?)?))?$/x.freeze
+    ENV_VALUE_PATTERN = /^\$(\w+)(\|(.*))?$/.freeze
+    # COLON_OBJECT_PATTERN = /^([A-Za-z_]\w*(\.[A-Za-z_]\w*)*)(:([A-Za-z_]\w*))?$/.freeze
+    INTERPOLATION_PATTERN = /\$\{([^}]+)\}/.freeze
+
+    def default_string_converter(str, cfg)
+      result = str
+      m = ISO_DATETIME_PATTERN.match str
+
+      if !m.nil?
+        year = m[1].to_i
+        month = m[2].to_i
+        day = m[3].to_i
+        has_time = !m[5].nil?
+        if !has_time
+          result = Date.new year, month, day
+        else
+          hour = m[8].to_i
+          minute = m[9].to_i
+          second = m[10].to_i
+          fracseconds = if m[11].nil?
+                          0
+                        else
+                          m[11].to_f
+                        end
+          offset = if m[13].nil?
+                     0
+                   else
+                     sign = m[13] == '-' ? -1 : 1
+                     ohour = m[14].to_i
+                     ominute = m[15].to_i
+                     osecond = m[17] ? m[17].to_i : 0
+                     (osecond + ominute * 60 +
+                      ohour * 3600) * sign / 86_400.0
+                   end
+          result = DateTime.new(year, month, day, hour, minute,
+                                fracseconds + second, offset)
+        end
+      else
+        m = ENV_VALUE_PATTERN.match str
+        if !m.nil?
+          var_name = m[1]
+          has_pipe = !m[2].nil?
+          dv = if !has_pipe
+                 NULL_VALUE
+               else
+                 m[3]
+               end
+          result = ENV.include?(var_name) ? ENV[var_name] : dv
+        else
+        end
+      end
+      result
+    end
+
     class Evaluator
       attr_reader :config
       attr_reader :refs_seen
@@ -1201,24 +1259,406 @@ module CFG
         @refs_seen = Set.new
       end
 
+      def eval_at(node)
+        fn = evaluate node.operand
+        unless fn.is_a? String
+          e = ConfigError.new "@ operand must be a string, but is #{fn}"
+          e.location = node.operand.start
+          raise e
+        end
+        found = false
+        p = Pathname.new fn
+        if p.absolute? && p.exist?
+          found = true
+        else
+          p = Pathname.new(@config.root_dir).join fn
+          if p.exist?
+            found = true
+          else
+            @config.include_path.each do |d|
+              p = Pathname.new(d).join(fn)
+              if p.exist?
+                found = true
+                break
+              end
+            end
+          end
+        end
+        unless found
+          e = ConfigError.new "Unable to locate #{fn}"
+          e.location = node.operand.start
+          raise e
+        end
+        f = File.open p, 'r:utf-8'
+        parser = Parser.new f
+        cnode = parser.container
+        if !cnode.is_a? MappingNode
+          result = cnode
+        else
+          result = Config.new
+          result.no_duplicates = @config.no_duplicates
+          result.strict_conversions = @config.strict_conversions
+          result.context = @config.context
+          result.cached = @config.cached
+          result.set_path p
+          result.parent = @config
+          result.data = result.wrap_mapping cnode
+        end
+        result
+      end
+
+      def eval_reference(node)
+        get_from_path node.operand
+      end
+
+      def to_complex(num)
+        if num.is_a? Complex
+          num
+        elsif num.is_a? Numeric
+          Complex(num, 0)
+        else
+          raise ConfigError, "cannot convert #{num} to a complex number"
+        end
+      end
+
+      def to_float(num)
+        if num.is_a? Float
+          num
+        elsif num.is_a? Numeric
+          num.to_f
+        else
+          raise ConfigError, "cannot convert #{num} to a floating-point number"
+        end
+      end
+
+      def merge_dict_wrappers(lhs, rhs)
+        raise NotImplementedError
+      end
+
+      def eval_add(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(DictWrapper) && rhs.is_a?(DictWrapper)
+          result = merge_dict_wrappers lhs, rhs
+        elsif lhs.is_a?(ListWrapper) && rhs.is_a?(ListWrapper)
+          result = ListWrapper.new lhs.config
+          result.concat lhs.as_list
+          result.concat rhs.as_list
+        elsif lhs.is_a?(String) && rhs.is_a?(String)
+          result = lhs + rhs
+        elsif lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+          result = lhs + rhs
+        elsif lhs.is_a?(Complex) || rhs.is_a?(Complex)
+          result = to_complex(lhs) + to_complex(rhs)
+        else
+          raise ConfigError, "cannot add #{rhs} to #{lhs}"
+        end
+        result
+      end
+
+      def eval_subtract(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(DictWrapper) && rhs.is_a?(DictWrapper)
+          result = DictWrapper.new @config
+          r = lhs.as_dict
+          s = rhs.as_dict
+          r.each do |k, v|
+            result[k] = v unless s.include? k
+          end
+        elsif lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+          result = lhs - rhs
+        elsif lhs.is_a?(ListWrapper) && rhs.is_a?(ListWrapper)
+          raise NotImplementedError
+        elsif lhs.is_a?(Complex) || rhs.is_a?(Complex)
+          result = to_complex(lhs) - to_complex(rhs)
+        else
+          raise ConfigError, "unable to add #{lhs} and #{rhs}"
+        end
+        result
+      end
+
+      def eval_multiply(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+          result = lhs * rhs
+        elsif lhs.is_a?(Complex) || rhs.is_a?(Complex)
+          result = to_complex(lhs) * to_complex(rhs)
+        else
+          raise ConfigError, "unable to multiply #{lhs} by #{rhs}"
+        end
+        result
+      end
+
+      def eval_divide(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+          result = to_float(lhs) / rhs
+        elsif lhs.is_a?(Complex) || rhs.is_a?(Complex)
+          result = to_complex(lhs) / to_complex(rhs)
+        else
+          raise ConfigError, "unable to divide #{lhs} by #{rhs}"
+        end
+        result
+      end
+
       def evaluate(node)
         if node.is_a? Token
-          1
+          value = node.value
+          if SCALAR_TOKENS.include? node.kind
+            result = value
+          elsif node.kind == :WORD
+            if @config.context.include? value
+              result = @config.context[value]
+            else
+              e = ConfigError.new "Unknown variable '#{value}'"
+              e.location = node.start
+              raise e
+            end
+          elsif node.kind == :BACKTICK
+            result = @config.convert_string value
+          else
+            e = ConfigError.new "Unable to evaluate #{node}"
+            e.location = node.start
+            raise e
+          end
+        elsif node.is_a? MappingNode
+          result = @config.wrap_mapping node
+        elsif node.is_a? ListNode
+          result = @config.wrap_list node
         else
-          2
+          case node.kind
+          when :AT
+            result = eval_at node
+          when :DOLLAR
+            result = eval_reference node
+          when :LEFT_CURLY
+            result = @config.wrap_mapping node
+          when :PLUS
+            result = eval_add node
+          when :MINUS
+            result = if node.is_a? BinaryNode
+                       eval_subtract node
+                     else
+                       negate node
+                     end
+          when :STAR
+            result = eval_multiply node
+          when :SLASH
+            result = eval_divide node
+          when :SLASH_SLASH
+            result = eval_integer_divide node
+          when :MODULO
+            result = eval_modulo node
+          when :LEFT_SHIFT
+            result = eval_left_shift node
+          when :RIGHT_SHIFT
+            result = eval_right_shift node
+          when :POWER
+            result = eval_power node
+          when :AND
+            result = eval_logical_and node
+          when :OR
+            result = eval_logical_or node
+          when :BITWISE_OR
+            result = eval_bitwise_or node
+          when :BITWISE_AND
+            result = eval_bitwise_and node
+          when :BITWISE_XOR
+            result = eval_bitwise_xor node
+          else
+            e = ConfigError.new "Unable to evaluate #{node}"
+            e.location = node.start
+            raise e
+          end
         end
+        result
+      end
+
+      def get_slice(container, slice)
+        size = container.length
+        step = slice.step.nil? ? 1 : evaluate(slice.step)
+        raise BadIndexError, 'slice step cannot be zero' if step.zero?
+
+        start_index = if slice.start_index.nil?
+                        0
+                      else
+                        n = evaluate slice.start_index
+                        if n.negative?
+                          if n >= -size
+                            n += size
+                          else
+                            n = 0
+                          end
+                        elsif n >= size
+                          n = size - 1
+                        end
+                        n
+                      end
+
+        stop_index = if slice.stop_index.nil?
+                       size - 1
+                     else
+                       n = evaluate slice.stop_index
+                       if n.negative?
+                         if n >= -size
+                           n += size
+                         else
+                           n = 0
+                         end
+                       end
+                       n = size if n > size
+                       step.negative? ? (n + 1) : (n - 1)
+                     end
+
+        stop_index, start_index = start_index, stop_index if step.negative? && start_index < stop_index
+
+        result = ListWrapper.new @config
+        i = start_index
+        not_done = step.positive? ? i <= stop_index : i >= stop_index
+        while not_done
+          result.push container[i]
+          i += step
+          not_done = step.positive? ? i <= stop_index : i >= stop_index
+        end
+        result
+      end
+
+      def ref?(node)
+        node.is_a?(ASTNode) && node.kind == :DOLLAR
+      end
+
+      def get_from_path(path_node)
+        parts = unpack_path path_node
+        result = @config.base_get parts.shift.value
+
+        # We start the evaluation with the current instance, but a path may
+        # cross sub-configuration boundaries, and references must always be
+        # evaluated in the context of the immediately enclosing configuration,
+        # not the top-level configuration (references are relative to the
+        # root of the enclosing configuration - otherwise configurations would
+        # not be standalone. So whenever we cross a sub-configuration boundary,
+        # the current_evaluator has to be pegged to that sub-configuration.
+
+        current_evaluator = result.is_a?(Config) ? result.evaluator : self
+
+        parts.each do |part|
+          op, operand = part
+          sliced = operand.is_a? SliceNode
+          operand = current_evaluator.evaluate(operand) if !sliced && op != :DOT && operand.is_a?(ASTNode)
+          list_error = sliced && !result.is_a?(ListWrapper)
+          raise BadIndexError, 'slices can only operate on lists' if list_error
+
+          map_error = (result.is_a?(DictWrapper) || result.is_a?(Config)) && !operand.is_a?(String)
+          raise BadIndexError, "string required, but found #{operand}" if map_error
+
+          if result.is_a? DictWrapper
+            raise ConfigError, "Not found in configuration: #{operand}" unless result.include? operand
+
+            result = result.base_get operand
+          elsif result.is_a? Config
+            current_evaluator = result.evaluator
+            result = result.base_get operand
+          elsif result.is_a? ListWrapper
+            n = result.length
+            if operand.is_a? Integer
+              operand += n if operand.negative? && operand >= -n
+              raise BadIndexError, "index out of range: is #{operand}, must be between 0 and #{n - 1}" if operand >= n
+
+              result = result.base_get operand
+            elsif sliced
+              result = get_slice result, operand
+            else
+              raise BadIndexError, "integer required, but found #{operand}"
+            end
+          else
+            # result is not a Config, DictWrapper or ListWrapper.
+            # Just throw a generic "not in configuration" error
+            raise ConfigError, "Not found in configuration: #{to_source path_node}"
+          end
+          if ref? result
+            if current_evaluator.refs_seen.include? result
+              parts = current_evaluator.refs_seen.map { |item| "#{to_source item} #{item.start}" }
+              ps = parts.sort.join(', ')
+              raise CircularReferenceError "Circular reference: #{ps}"
+            end
+            current_evaluator.refs_seen.add result
+          end
+          if result.is_a? MappingNode
+            result = @config.wrap_mapping result
+          elsif result.is_a? ListNode
+            result = @config.wrap_list result
+          end
+          if result.is_a? ASTNode
+            e = current_evaluator.evaluate result
+            result = e unless e.equal? result
+          end
+        end
+        @refs_seen.clear
+        result
       end
     end
 
     class DictWrapper < Hash
+      attr_reader :config
+
+      alias base_get []
+
       def initialize(config)
         @config = config
+      end
+
+      def as_dict
+        result = {}
+
+        each do |k, v|
+          rv = @config.evaluated v
+          if rv.is_a?(DictWrapper) || rv.is_a?(Config)
+            rv = rv.as_dict
+          elsif rv.is_a? ListWrapper
+            rv = rv.as_list
+          end
+          result[k] = rv
+        end
+        result
       end
     end
 
     class ListWrapper < Array
+      attr_reader :config
+
+      alias base_get []
+
       def initialize(config)
         @config = config
+      end
+
+      def as_list
+        result = []
+        each do |rv|
+          rv = if rv.is_a?(DictWrapper) || rv.is_a?(Config)
+                 rv.as_dict
+               elsif rv.is_a? ListWrapper
+                 rv.as_list
+               else
+                 @config.evaluated rv
+               end
+          result.push rv
+        end
+        result
+      end
+
+      def [](index)
+        result = base_get index
+
+        self[index] = result = @config.evaluated(result)
+        result
       end
     end
 
@@ -1271,6 +1711,16 @@ module CFG
       result
     end
 
+    SCALAR_TOKENS = Set[
+      :STRING,
+      :INTEGER,
+      :FLOAT,
+      :COMPLEX,
+      :FALSE,
+      :TRUE,
+      :NONE
+    ]
+
     class Config
       attr_accessor :no_duplicates
       attr_accessor :strict_conversions
@@ -1279,6 +1729,9 @@ module CFG
       attr_accessor :path
       attr_accessor :root_dir
       attr_accessor :string_converter
+      attr_accessor :parent
+      attr_accessor :data
+      attr_accessor :evaluator
 
       def initialize(path_or_reader = nil)
         @no_duplicates = true
@@ -1288,6 +1741,7 @@ module CFG
         @path = nil
         @root_dir = nil
         @evaluator = Evaluator.new self
+        @string_converter = method :default_string_converter
 
         @cache = nil
         @data = nil
@@ -1366,7 +1820,7 @@ module CFG
 
       def get_from_path(path)
         @evaluator.refs_seen.clear
-        evaluator.get_from_path parse_path(path)
+        @evaluator.get_from_path parse_path(path)
       end
 
       def convert_string(str)
@@ -1395,14 +1849,25 @@ module CFG
         else
           if @data.include? key
             result = evaluated @data[key]
-          elsif identifier? key
+          elsif Config.identifier? key
             raise ConfigError, "Not found in configuration: #{key}" if default.equal?(MISSING)
 
             result = default
           else
             # not an identifier. Treat as a path
-            result = nil
+            begin
+              result = get_from_path key
+            rescue InvalidPathError, BadIndexError, CircularReferenceError
+              raise
+            rescue ConfigError
+              if default.equal? MISSING
+                e = ConfigError.new "Not found in configuration: '{key}"
+                raise e
+              end
+              result = default
+            end
           end
+          # if user specified a cache, populate it
           @cache[key] = result unless @cache.nil?
         end
         result
@@ -1414,6 +1879,10 @@ module CFG
 
       def [](key)
         get key
+      end
+
+      def as_dict
+        @data.as_dict
       end
     end
   end

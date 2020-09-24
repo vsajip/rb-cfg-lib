@@ -1,3 +1,4 @@
+require 'date'
 require 'stringio'
 
 require 'test_helper'
@@ -663,12 +664,53 @@ class ConfigTest < Minitest::Test
     end
   end
 
+  def make_offset(hrs, mins, secs = 0)
+    ((hrs * 60 + mins) * 60 + secs) / 86_400.0
+  end
+
   def test_main_config
     rd = data_file_path 'derived'
     fn = File.join rd, 'main.cfg'
     config = Config.new
     config.include_path.push data_file_path('base')
     config.load_file fn
-    # log_conf = config['logging']
+    log_conf = config['logging']
+    assert_instance_of Config, log_conf
+    assert_equal %w[formatters handlers loggers root], log_conf.as_dict.keys.sort
+    e = assert_raises(InvalidPathError) { log_conf['handlers.file/filename'] }
+    refute_nil e.message.index 'Invalid path: handlers.file/filename'
+    assert_equal 'bar', log_conf.get('foo', 'bar')
+    assert_equal 'baz', log_conf.get('foo.bar', 'baz')
+    assert_equal 'bozz', log_conf.get('handlers.debug.levl', 'bozz')
+    assert_equal 'run/server.log', log_conf['handlers.file.filename']
+    assert_equal 'run/server-debug.log', log_conf['handlers.debug.filename']
+    assert_equal %w[file error debug], log_conf['root.handlers']
+    assert_equal %w[file error], log_conf['root.handlers[:2]']
+    assert_equal %w[file debug], log_conf['root.handlers[::2]']
+
+    test = config['test']
+    assert_instance_of Config, test
+    assert_equal 1.0e-7, test['float']
+    assert_equal 0.3, test['float2']
+    assert_equal 3.0, test['float3']
+    assert_equal 2, test['list[1]']
+    assert_equal 'b', test['dict.a']
+    dt = Date.new 2019, 3, 28
+    assert_equal dt, test['date']
+    dt = DateTime.new 2019, 3, 28, 23, 27, 4.314159, make_offset(5, 30)
+    assert_equal dt, test['date_time']
+    dt = DateTime.new 2019, 3, 28, 23, 27, 4.314159, -make_offset(5, 30)
+    assert_equal dt, test['neg_offset_time']
+    dt = DateTime.new 2019, 3, 28, 23, 27, 4.271828
+    assert_equal dt, test['alt_date_time']
+    dt = DateTime.new 2019, 3, 28, 23, 27, 4
+    assert_equal dt, test['no_ms_time']
+    assert_equal 3.3, test['computed']
+    assert_equal 2.7, test['computed2']
+    assert_in_epsilon 0.9, test['computed3'], 1e-7
+    assert_equal 10.0, test['computed4']
+    assert_instance_of Config, config['base']
+    expected = %w[derived_foo derived_bar derived_baz test_foo test_bar test_baz base_foo base_bar base_baz]
+    assert_equal expected, config['combined_list']
   end
 end
