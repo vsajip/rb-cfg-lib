@@ -1197,7 +1197,8 @@ module CFG
                             (([ T])(((\d{2}):(\d{2}):(\d{2}))(\.\d{1,6})?
                             (([+-])(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?)?))?$/x.freeze
     ENV_VALUE_PATTERN = /^\$(\w+)(\|(.*))?$/.freeze
-    # COLON_OBJECT_PATTERN = /^([A-Za-z_]\w*(\.[A-Za-z_]\w*)*)(:([A-Za-z_]\w*))?$/.freeze
+    COLON_OBJECT_PATTERN = /^(\p{L}\w*(\/\p{L}\w*)*:::)?(\p{Lu}\w*(::\p{Lu}\w*)*)
+                            (\.([\p{L}_]\w*(\.[\p{L}_]\w*)*))?$/xu.freeze
     INTERPOLATION_PATTERN = /\$\{([^}]+)\}/.freeze
 
     def default_string_converter(str, cfg)
@@ -1245,6 +1246,19 @@ module CFG
                end
           result = ENV.include?(var_name) ? ENV[var_name] : dv
         else
+          m = COLON_OBJECT_PATTERN.match str
+          unless m.nil?
+            unless m[1].nil?
+              require(m[1][0..-4])
+            end
+            result = Object.const_get m[3]
+            unless m[5].nil?
+              parts = m[6].split('.')
+              parts.each do |part|
+                result = result.send(part)
+              end
+            end
+          end
         end
       end
       result
@@ -1331,8 +1345,23 @@ module CFG
         end
       end
 
+      def merge_dicts(target, source)
+        source.each do |k, v|
+          if target.include?(v) && target[k].is_a?(Hash) && v.is_a?(Hash)
+            merge_dicts target[k], v
+          else
+            target[k] = v
+          end
+        end
+      end
+
       def merge_dict_wrappers(lhs, rhs)
-        raise NotImplementedError
+        r = lhs.as_dict
+        source = rhs.as_dict
+        merge_dicts r, source
+        result = DictWrapper.new @config
+        result.update r
+        result
       end
 
       def eval_add(node)
@@ -1404,6 +1433,129 @@ module CFG
           result = to_complex(lhs) / to_complex(rhs)
         else
           raise ConfigError, "unable to divide #{lhs} by #{rhs}"
+        end
+        result
+      end
+
+      def eval_integer_divide(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs / rhs
+        else
+          raise ConfigError, "unable to integer-divide #{lhs} by #{rhs}"
+        end
+        result
+      end
+
+      def eval_modulo(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs % rhs
+        else
+          raise ConfigError, "unable to compute #{lhs} modulo #{rhs}"
+        end
+        result
+      end
+
+      def eval_left_shift(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs << rhs
+        else
+          raise ConfigError, "unable to left-shift #{lhs} by #{rhs}"
+        end
+        result
+      end
+
+      def eval_right_shift(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs >> rhs
+        else
+          raise ConfigError, "unable to right-shift #{lhs} by #{rhs}"
+        end
+        result
+      end
+
+      def eval_logical_and(node)
+        lhs = !!evaluate(node.lhs)
+        return false unless lhs
+        !!evaluate(node.rhs)
+      end
+
+      def eval_logical_or(node)
+        lhs = !!evaluate(node.lhs)
+        return true if lhs
+        !!evaluate(node.rhs)
+      end
+
+      def eval_bitwise_or(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(DictWrapper) && rhs.is_a?(DictWrapper)
+          result = merge_dict_wrappers lhs, rhs
+        elsif lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs | rhs
+        else
+          raise ConfigError, "unable to bitwise-or #{lhs} and #{rhs}"
+        end
+        result
+      end
+
+      def eval_bitwise_and(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs & rhs
+        else
+          raise ConfigError, "unable to bitwise-and #{lhs} and #{rhs}"
+        end
+        result
+      end
+
+      def eval_bitwise_xor(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
+          result = lhs ^ rhs
+        else
+          raise ConfigError, "unable to bitwise-xor #{lhs} and #{rhs}"
+        end
+        result
+      end
+
+      def negate(node)
+        operand = evaluate(node.operand)
+        result = nil
+        if operand.is_a?(Integer)
+          result = -operand
+        elsif operand.is_a? Complex
+          result = Complex(-operand.real, -operand.imag)
+        else
+          raise ConfigError, "unable to negate #{operand}"
+        end
+        result
+      end
+
+      def eval_power(node)
+        lhs = evaluate(node.lhs)
+        rhs = evaluate(node.rhs)
+        result = nil
+        if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+          result = lhs ** rhs
+        else
+          raise ConfigError, "unable to raise #{lhs} to power #{rhs}"
         end
         result
       end
@@ -1627,6 +1779,14 @@ module CFG
           result[k] = rv
         end
         result
+      end
+
+      def [](key)
+        if include? key
+          @config.evaluated base_get(key)
+        else
+          raise ConfigError, "Not found in configuration: #{key}"
+        end
       end
     end
 

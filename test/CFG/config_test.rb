@@ -712,5 +712,134 @@ class ConfigTest < Minitest::Test
     assert_instance_of Config, config['base']
     expected = %w[derived_foo derived_bar derived_baz test_foo test_bar test_baz base_foo base_bar base_baz]
     assert_equal expected, config['combined_list']
+    expected = {
+      'foo_key' => 'base_foo',
+      'bar_key' => 'base_bar',
+      'baz_key' => 'base_baz',
+      'base_foo_key' => 'base_foo',
+      'base_bar_key' => 'base_bar',
+      'base_baz_key' => 'base_baz',
+      'derived_foo_key' => 'derived_foo',
+      'derived_bar_key' => 'derived_bar',
+      'derived_baz_key' => 'derived_baz',
+      'test_foo_key' => 'test_foo',
+      'test_bar_key' => 'test_bar',
+      'test_baz_key' => 'test_baz'
+    }
+    assert_equal expected, config['combined_map_1']
+    expected = {
+      'derived_foo_key' => 'derived_foo',
+      'derived_bar_key' => 'derived_bar',
+      'derived_baz_key' => 'derived_baz'
+    }
+    assert_equal expected, config['combined_map_2']
+    assert_equal config['number_1'] & config['number_2'], config['number_3']
+    assert_equal config['number_1'] ^ config['number_2'], config['number_4']
+    cases = [
+      ['logging[4]', 'string required, but found 4'],
+      ['logging[:4]', 'slices can only operate on lists'],
+      ['no_such_key', 'Not found in configuration: no_such_key']
+    ]
+    cases.each do |src, msg|
+      e = assert_raises(ConfigError, BadIndexError) { config[src] }
+      refute_nil e.message.index msg
+    end
+  end
+
+  def test_example_config
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'example.cfg'
+    config = Config.new
+    config.include_path.push data_file_path('base')
+    config.load_file fn
+
+    # strings
+    assert_equal config['snowman_escaped'], config['snowman_unescaped']
+    assert_equal "\u2603", config['snowman_escaped']
+    assert_equal "\u{1f602}",config['face_with_tears_of_joy']
+    assert_equal "\u{1f602}", config['unescaped_face_with_tears_of_joy']
+    strings = config["strings"]
+    assert_equal "Oscar Fingal O'Flahertie Wills Wilde", strings[0]
+    assert_equal 'size: 5"', strings[1]
+    assert_equal "Triple quoted form\ncan span\n'multiple' lines", strings[2]
+    assert_equal "with \"either\"\nkind of 'quote' embedded within", strings[3]
+
+    # special strings
+    assert_equal File::PATH_SEPARATOR, config['special_value_1']
+    assert_equal ENV['HOME'], config['special_value_2']
+    sv3 = config['special_value_3']
+    assert_equal 2019, sv3.year
+    assert_equal 3, sv3.month
+    assert_equal 28, sv3.day
+    assert_equal 23, sv3.hour
+    assert_equal 27, sv3.minute
+    assert_equal 4, sv3.second
+    assert_equal 314159000, sv3.second_fraction * 1e9
+    assert_equal make_offset(5, 30, 43), sv3.offset
+    assert_equal 'bar', config['special_value_4']
+    assert_in_epsilon DateTime.now.to_time.to_f, config['special_value_5'].to_time.to_f
+
+    # integers
+    assert_equal 123, config['decimal_integer']
+    assert_equal 0x123, config['hexadecimal_integer']
+    assert_equal 83, config['octal_integer']
+    assert_equal 0b000100100011, config['binary_integer']
+
+    # floats
+    assert_equal 123.456, config['common_or_garden']
+    assert_equal 0.123, config["leading_zero_not_needed"]
+    assert_equal 123.0, config["trailing_zero_not_needed"]
+    assert_equal 1.0e6, config["scientific_large"]
+    assert_equal 1.0e-7, config["scientific_small"]
+    assert_equal 3.14159, config["expression_1"]
+
+    # complex
+    assert_equal Complex(3.0, 2.0), config['expression_2']
+    assert_equal Complex(1.0, 3.0), config['list_value[4]']
+
+    # boolean
+    assert_equal true, config['boolean_value']
+    assert_equal false, config['opposite_boolean_value']
+    assert_equal false, config['computed_boolean_2']
+    assert_equal true, config['computed_boolean_1']
+
+    # list
+    assert_equal %w[a b c], config['incl_list']
+
+    # mapping
+    expected = {
+      'bar' => 'baz',
+      'foo' => 'bar'
+    }
+    assert_equal expected, config['incl_mapping'].as_dict
+    expected = {
+      'baz' => 'bozz',
+      'fizz' => 'buzz'
+    }
+    assert_equal expected, config['incl_mapping_body'].as_dict
+  end
+
+  def test_duplicates
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'dupes.cfg'
+    config = Config.new
+    e = assert_raises(ConfigError) { config.load_file fn }
+    refute_nil e.message.index 'Duplicate key '
+    config.no_duplicates = false
+    config.load_file fn
+    assert_equal 'not again!', config['foo']
+  end
+
+  def test_context
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'context.cfg'
+    config = Config.new
+    config.context = {
+        'bozz' => 'bozz-bozz'
+    }
+    config.load_file fn
+    assert_equal 'bozz-bozz', config['baz']
+    e = assert_raises(ConfigError) { config['bad'] }
+    refute_nil e.message.index 'Unknown variable '
   end
 end
