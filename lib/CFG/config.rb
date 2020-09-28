@@ -2086,7 +2086,7 @@ module CFG
       end
 
       def as_dict
-        @data.as_dict
+        @data.nil? ? {} : @data.as_dict
       end
     end
   end
