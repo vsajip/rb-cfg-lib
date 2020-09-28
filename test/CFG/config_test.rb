@@ -1109,4 +1109,87 @@ class ConfigTest < Minitest::Test
       assert s.equal? it
     end
   end
+
+  def test_circular_references
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'test.cfg'
+    config = Config.new fn
+    cases = [
+      ['circ_list[1]', 'Circular reference: circ_list[1] (46, 5)'],
+      ['circ_map.a', 'Circular reference: circ_map.a (53, 8), circ_map.b (51, 8), circ_map.c (52, 8)']
+    ]
+    cases.each do |path, msg|
+      e = assert_raises(CircularReferenceError) { config[path] }
+      assert_equal msg, e.message
+    end
+  end
+
+  def test_caching
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'test.cfg'
+    config = Config.new fn
+    config.cached = true
+    v1 = config['time_now']
+    sleep 0.05
+    v2 = config['time_now']
+    assert_equal v1, v2
+    config.cached = false
+    v3 = config['time_now']
+    sleep 0.05
+    v4 = config['time_now']
+    refute_equal v3, v4
+    refute_equal v3, v1
+  end
+
+  def test_slices_and_indices
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'test.cfg'
+    config = Config.new fn
+    the_list = %w[a b c d e f g]
+
+    # slices
+
+    assert_equal the_list, config['test_list[:]']
+    assert_equal the_list, config['test_list[::]']
+    assert_equal the_list, config['test_list[:20]']
+    assert_equal %w[a b c d], config['test_list[-20:4]']
+    assert_equal the_list, config['test_list[-20:20]']
+    assert_equal %w[c d e f g], config['test_list[2:]']
+    assert_equal %w[e f g], config['test_list[-3:]']
+    assert_equal %w[f e d], config['test_list[-2:2:-1]']
+    assert_equal %w[g f e d c b a], config['test_list[::-1]']
+    assert_equal %w[c e], config['test_list[2:-2:2]']
+    assert_equal %w[a c e g], config['test_list[::2]']
+    assert_equal %w[a d g], config['test_list[::3]']
+    assert_equal %w[a g], config['test_list[::2][::3]']
+
+    # indices
+
+    the_list.each_with_index do |v, i|
+      assert_equal v, config["test_list[#{i}]"]
+    end
+
+    # negative indices
+
+    n = the_list.length
+    n.downto 1 do |i|
+      assert_equal the_list[n - i], config["test_list[-#{i}]"]
+    end
+
+    # invalid indices
+
+    [n, n + 1, -(n + 1), -(n + 2)].each do |i|
+      e = assert_raises(ConfigError) { config["test_list[#{i}]"] }
+      refute_nil e.message.index 'index out of range: '
+    end
+  end
+
+  def test_absolute_include_paths
+    rd = data_file_path 'derived'
+    fn = File.absolute_path File.join(rd, 'test.cfg')
+    src = "test: @'#{fn}'"
+    stream = StringIO.new src, 'r:utf-8'
+    cfg = Config.new stream
+    assert_equal 2, cfg['test.computed6']
+  end
 end
