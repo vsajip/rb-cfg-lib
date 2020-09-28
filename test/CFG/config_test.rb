@@ -3,7 +3,7 @@ require 'stringio'
 
 require 'test_helper'
 
-include CFG::Config
+include CFG
 
 def parse(src, rule = 'mapping_body')
   p = make_parser src

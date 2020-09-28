@@ -1,8 +1,8 @@
-require_relative 'lib/CFG/config/version'
+require_relative 'lib/CFG/version'
 
 Gem::Specification.new do |spec|
   spec.name = 'cfg-config'
-  spec.version = CFG::Config::VERSION
+  spec.version = CFG::VERSION
   spec.authors = ['Vinay Sajip']
   spec.email = ['vinay_sajip@yahoo.co.uk']
 
