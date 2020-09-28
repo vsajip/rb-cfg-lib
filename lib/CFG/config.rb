@@ -26,6 +26,101 @@ module CFG
       def hexdigit?(chr)
         chr =~ /[[:xdigit:]]/
       end
+
+      ISO_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})
+                              (([ T])(((\d{2}):(\d{2}):(\d{2}))(\.\d{1,6})?
+                              (([+-])(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?)?))?$/x.freeze
+      ENV_VALUE_PATTERN = /^\$(\w+)(\|(.*))?$/.freeze
+      COLON_OBJECT_PATTERN = /^(\p{L}\w*(\/\p{L}\w*)*:::)?(\p{Lu}\w*(::\p{Lu}\w*)*)
+                              (\.([\p{L}_]\w*(\.[\p{L}_]\w*)*))?$/xu.freeze
+      INTERPOLATION_PATTERN = /(\$\{([^}]+)\})/.freeze
+
+      def default_string_converter(str, cfg)
+        result = str
+        m = ISO_DATETIME_PATTERN.match str
+
+        if !m.nil?
+          year = m[1].to_i
+          month = m[2].to_i
+          day = m[3].to_i
+          has_time = !m[5].nil?
+          if !has_time
+            result = Date.new year, month, day
+          else
+            hour = m[8].to_i
+            minute = m[9].to_i
+            second = m[10].to_i
+            fracseconds = if m[11].nil?
+                            0
+                          else
+                            m[11].to_f
+                          end
+            offset = if m[13].nil?
+                       0
+                     else
+                       sign = m[13] == '-' ? -1 : 1
+                       ohour = m[14].to_i
+                       ominute = m[15].to_i
+                       osecond = m[17] ? m[17].to_i : 0
+                       (osecond + ominute * 60 +
+                        ohour * 3600) * sign / 86_400.0
+                     end
+            result = DateTime.new(year, month, day, hour, minute,
+                                  fracseconds + second, offset)
+          end
+        else
+          m = ENV_VALUE_PATTERN.match str
+          if !m.nil?
+            var_name = m[1]
+            has_pipe = !m[2].nil?
+            dv = if !has_pipe
+                   NULL_VALUE
+                 else
+                   m[3]
+                 end
+            result = ENV.include?(var_name) ? ENV[var_name] : dv
+          else
+            m = COLON_OBJECT_PATTERN.match str
+            if !m.nil?
+              require(m[1][0..-4]) unless m[1].nil?
+              result = Object.const_get m[3]
+              unless m[5].nil?
+                parts = m[6].split('.')
+                parts.each do |part|
+                  result = result.send(part)
+                end
+              end
+            else
+              m = INTERPOLATION_PATTERN.match str
+              unless m.nil?
+                matches = str.enum_for(:scan, INTERPOLATION_PATTERN).map do
+                  [Regexp.last_match.offset(0), Regexp.last_match.captures[1]]
+                end
+                cp = 0
+                failed = false
+                parts = []
+                matches.each do |off, path|
+                  first = off[0]
+                  last = off[1]
+                  parts.push str[cp..first - 1] if first > cp
+                  begin
+                    parts.push string_for(cfg.get(path))
+                    cp = last
+                  rescue StandardError
+                    failed = true
+                    break
+                  end
+                end
+                unless failed
+                  parts.push str[cp..str.length - 1] if cp < str.length
+                  result = parts.join('')
+                end
+              end
+            end
+          end
+        end
+        result
+      end
     end
 
     class RecognizerError < StandardError
@@ -1193,14 +1288,6 @@ module CFG
       Parser.new stream
     end
 
-    ISO_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})
-                            (([ T])(((\d{2}):(\d{2}):(\d{2}))(\.\d{1,6})?
-                            (([+-])(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?)?))?$/x.freeze
-    ENV_VALUE_PATTERN = /^\$(\w+)(\|(.*))?$/.freeze
-    COLON_OBJECT_PATTERN = /^(\p{L}\w*(\/\p{L}\w*)*:::)?(\p{Lu}\w*(::\p{Lu}\w*)*)
-                            (\.([\p{L}_]\w*(\.[\p{L}_]\w*)*))?$/xu.freeze
-    INTERPOLATION_PATTERN = /(\$\{([^}]+)\})/.freeze
-
     def string_for(obj)
       if obj.is_a? Array
         parts = obj.map { |it| string_for it }
@@ -1211,93 +1298,6 @@ module CFG
       else
         obj.to_s
       end
-    end
-
-    def default_string_converter(str, cfg)
-      result = str
-      m = ISO_DATETIME_PATTERN.match str
-
-      if !m.nil?
-        year = m[1].to_i
-        month = m[2].to_i
-        day = m[3].to_i
-        has_time = !m[5].nil?
-        if !has_time
-          result = Date.new year, month, day
-        else
-          hour = m[8].to_i
-          minute = m[9].to_i
-          second = m[10].to_i
-          fracseconds = if m[11].nil?
-                          0
-                        else
-                          m[11].to_f
-                        end
-          offset = if m[13].nil?
-                     0
-                   else
-                     sign = m[13] == '-' ? -1 : 1
-                     ohour = m[14].to_i
-                     ominute = m[15].to_i
-                     osecond = m[17] ? m[17].to_i : 0
-                     (osecond + ominute * 60 +
-                      ohour * 3600) * sign / 86_400.0
-                   end
-          result = DateTime.new(year, month, day, hour, minute,
-                                fracseconds + second, offset)
-        end
-      else
-        m = ENV_VALUE_PATTERN.match str
-        if !m.nil?
-          var_name = m[1]
-          has_pipe = !m[2].nil?
-          dv = if !has_pipe
-                 NULL_VALUE
-               else
-                 m[3]
-               end
-          result = ENV.include?(var_name) ? ENV[var_name] : dv
-        else
-          m = COLON_OBJECT_PATTERN.match str
-          if !m.nil?
-            require(m[1][0..-4]) unless m[1].nil?
-            result = Object.const_get m[3]
-            unless m[5].nil?
-              parts = m[6].split('.')
-              parts.each do |part|
-                result = result.send(part)
-              end
-            end
-          else
-            m = INTERPOLATION_PATTERN.match str
-            unless m.nil?
-              matches = str.enum_for(:scan, INTERPOLATION_PATTERN).map do
-                [Regexp.last_match.offset(0), Regexp.last_match.captures[1]]
-              end
-              cp = 0
-              failed = false
-              parts = []
-              matches.each do |off, path|
-                first = off[0]
-                last = off[1]
-                parts.push str[cp..first - 1] if first > cp
-                begin
-                  parts.push string_for(cfg.get(path))
-                  cp = last
-                rescue StandardError
-                  failed = true
-                  break
-                end
-              end
-              unless failed
-                parts.push str[cp..str.length - 1] if cp < str.length
-                result = parts.join('')
-              end
-            end
-          end
-        end
-      end
-      result
     end
 
     class Evaluator
@@ -1924,6 +1924,8 @@ module CFG
     ]
 
     class Config
+      include Utils
+
       attr_accessor :no_duplicates
       attr_accessor :strict_conversions
       attr_accessor :context
