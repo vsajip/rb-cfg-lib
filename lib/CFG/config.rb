@@ -1731,7 +1731,8 @@ module CFG
             n = result.length
             if operand.is_a? Integer
               operand += n if operand.negative? && operand >= -n
-              raise BadIndexError, "index out of range: is #{operand}, must be between 0 and #{n - 1}" if operand >= n
+              msg = "index out of range: is #{operand}, must be between 0 and #{n - 1}"
+              raise BadIndexError, msg if operand >= n || operand.negative?
 
               result = result.base_get operand
             elsif sliced
@@ -1748,7 +1749,7 @@ module CFG
             if current_evaluator.refs_seen.include? result
               parts = current_evaluator.refs_seen.map { |item| "#{to_source item} #{item.start}" }
               ps = parts.sort.join(', ')
-              raise CircularReferenceError "Circular reference: #{ps}"
+              raise CircularReferenceError, "Circular reference: #{ps}"
             end
             current_evaluator.refs_seen.add result
           end
