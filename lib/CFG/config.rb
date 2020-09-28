@@ -237,7 +237,7 @@ module CFG
       end
 
       def push_back(chr)
-        @pushed_back.push([chr, Location.from(@char_location)]) if !chr.nil? && ((chr == "\n") || !white_space?(chr))
+        @pushed_back.push([chr, Location.from(@char_location)]) unless chr.nil?
       end
 
       def get_char
@@ -1199,7 +1199,19 @@ module CFG
     ENV_VALUE_PATTERN = /^\$(\w+)(\|(.*))?$/.freeze
     COLON_OBJECT_PATTERN = /^(\p{L}\w*(\/\p{L}\w*)*:::)?(\p{Lu}\w*(::\p{Lu}\w*)*)
                             (\.([\p{L}_]\w*(\.[\p{L}_]\w*)*))?$/xu.freeze
-    INTERPOLATION_PATTERN = /\$\{([^}]+)\}/.freeze
+    INTERPOLATION_PATTERN = /(\$\{([^}]+)\})/.freeze
+
+    def string_for(obj)
+      if obj.is_a? Array
+        parts = obj.map { |it| string_for it }
+        "[#{parts.join ', '}]"
+      elsif obj.is_a? Hash
+        parts = obj.map { |k, v| "#{k}: #{string_for v}" }
+        "{#{parts.join ', '}}"
+      else
+        obj.to_s
+      end
+    end
 
     def default_string_converter(str, cfg)
       result = str
@@ -1247,15 +1259,39 @@ module CFG
           result = ENV.include?(var_name) ? ENV[var_name] : dv
         else
           m = COLON_OBJECT_PATTERN.match str
-          unless m.nil?
-            unless m[1].nil?
-              require(m[1][0..-4])
-            end
+          if !m.nil?
+            require(m[1][0..-4]) unless m[1].nil?
             result = Object.const_get m[3]
             unless m[5].nil?
               parts = m[6].split('.')
               parts.each do |part|
                 result = result.send(part)
+              end
+            end
+          else
+            m = INTERPOLATION_PATTERN.match str
+            unless m.nil?
+              matches = str.enum_for(:scan, INTERPOLATION_PATTERN).map do
+                [Regexp.last_match.offset(0), Regexp.last_match.captures[1]]
+              end
+              cp = 0
+              failed = false
+              parts = []
+              matches.each do |off, path|
+                first = off[0]
+                last = off[1]
+                parts.push str[cp..first - 1] if first > cp
+                begin
+                  parts.push string_for(cfg.get(path))
+                  cp = last
+                rescue StandardError
+                  failed = true
+                  break
+                end
+              end
+              unless failed
+                parts.push str[cp..str.length - 1] if cp < str.length
+                result = parts.join('')
               end
             end
           end
@@ -1347,7 +1383,7 @@ module CFG
 
       def merge_dicts(target, source)
         source.each do |k, v|
-          if target.include?(v) && target[k].is_a?(Hash) && v.is_a?(Hash)
+          if target.include?(k) && target[k].is_a?(Hash) && v.is_a?(Hash)
             merge_dicts target[k], v
           else
             target[k] = v
@@ -1440,60 +1476,46 @@ module CFG
       def eval_integer_divide(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs / rhs
-        else
-          raise ConfigError, "unable to integer-divide #{lhs} by #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to integer-divide #{lhs} by #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs / rhs
       end
 
       def eval_modulo(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs % rhs
-        else
-          raise ConfigError, "unable to compute #{lhs} modulo #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to compute #{lhs} modulo #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs % rhs
       end
 
       def eval_left_shift(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs << rhs
-        else
-          raise ConfigError, "unable to left-shift #{lhs} by #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to left-shift #{lhs} by #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs << rhs
       end
 
       def eval_right_shift(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs >> rhs
-        else
-          raise ConfigError, "unable to right-shift #{lhs} by #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to right-shift #{lhs} by #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs >> rhs
       end
 
       def eval_logical_and(node)
-        lhs = !!evaluate(node.lhs)
+        lhs = !!evaluate(node.lhs) # rubocop:disable Style/DoubleNegation
         return false unless lhs
+
         !!evaluate(node.rhs)
       end
 
       def eval_logical_or(node)
-        lhs = !!evaluate(node.lhs)
+        lhs = !!evaluate(node.lhs) # rubocop:disable Style/DoubleNegation
         return true if lhs
+
         !!evaluate(node.rhs)
       end
 
@@ -1514,25 +1536,17 @@ module CFG
       def eval_bitwise_and(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs & rhs
-        else
-          raise ConfigError, "unable to bitwise-and #{lhs} and #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to bitwise-and #{lhs} and #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs & rhs
       end
 
       def eval_bitwise_xor(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Integer) && rhs.is_a?(Integer)
-          result = lhs ^ rhs
-        else
-          raise ConfigError, "unable to bitwise-xor #{lhs} and #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to bitwise-xor #{lhs} and #{rhs}" unless lhs.is_a?(Integer) && rhs.is_a?(Integer)
+
+        lhs ^ rhs
       end
 
       def negate(node)
@@ -1551,13 +1565,9 @@ module CFG
       def eval_power(node)
         lhs = evaluate(node.lhs)
         rhs = evaluate(node.rhs)
-        result = nil
-        if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
-          result = lhs ** rhs
-        else
-          raise ConfigError, "unable to raise #{lhs} to power #{rhs}"
-        end
-        result
+        raise ConfigError, "unable to raise #{lhs} to power #{rhs}" unless lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+
+        lhs**rhs
       end
 
       def evaluate(node)
@@ -1782,11 +1792,9 @@ module CFG
       end
 
       def [](key)
-        if include? key
-          @config.evaluated base_get(key)
-        else
-          raise ConfigError, "Not found in configuration: #{key}"
-        end
+        raise ConfigError, "Not found in configuration: #{key}" unless include? key
+
+        @config.evaluated base_get(key)
       end
     end
 
@@ -1807,7 +1815,9 @@ module CFG
                elsif rv.is_a? ListWrapper
                  rv.as_list
                else
-                 @config.evaluated rv
+                 # TODO: check why this unwrap is needed here, but not in
+                 # e.g. Kotlin version
+                 unwrap @config.evaluated(rv)
                end
           result.push rv
         end
@@ -1845,6 +1855,37 @@ module CFG
       raise InvalidPathError, "Invalid path: #{src}" unless parser.at_end
 
       result
+    end
+
+    def to_source(node)
+      if node.is_a? Token
+        node.value.to_s
+      elsif !node.is_a? ASTNode
+        node.to_s
+      else
+        result = []
+        parts = unpack_path node
+        result.push parts.shift.value
+        parts.each do |part|
+          op, operand = part
+          case op
+          when :DOT
+            result.push ".#{operand}"
+          when :COLON
+            result.append '['
+            result.append to_source(operand.start_index) unless operand.start_index.nil?
+            result.append ':'
+            result.append to_source(operand.stop_index) unless operand.stop_index.nil?
+            result.append ":#{to_source operand.step}" unless operand.step.nil?
+            result.append ']'
+          when :LEFT_BRACKET
+            result.append "[#{to_source operand}]"
+          else
+            raise ConfigError, "unable to compute source for #{node}"
+          end
+        end
+        result.join('')
+      end
     end
 
     def _visit(node, collector)
@@ -2021,7 +2062,7 @@ module CFG
               raise
             rescue ConfigError
               if default.equal? MISSING
-                e = ConfigError.new "Not found in configuration: '{key}"
+                e = ConfigError.new "Not found in configuration: #{key}"
                 raise e
               end
               result = default

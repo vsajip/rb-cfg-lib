@@ -756,9 +756,9 @@ class ConfigTest < Minitest::Test
     # strings
     assert_equal config['snowman_escaped'], config['snowman_unescaped']
     assert_equal "\u2603", config['snowman_escaped']
-    assert_equal "\u{1f602}",config['face_with_tears_of_joy']
+    assert_equal "\u{1f602}", config['face_with_tears_of_joy']
     assert_equal "\u{1f602}", config['unescaped_face_with_tears_of_joy']
-    strings = config["strings"]
+    strings = config['strings']
     assert_equal "Oscar Fingal O'Flahertie Wills Wilde", strings[0]
     assert_equal 'size: 5"', strings[1]
     assert_equal "Triple quoted form\ncan span\n'multiple' lines", strings[2]
@@ -774,7 +774,7 @@ class ConfigTest < Minitest::Test
     assert_equal 23, sv3.hour
     assert_equal 27, sv3.minute
     assert_equal 4, sv3.second
-    assert_equal 314159000, sv3.second_fraction * 1e9
+    assert_equal 314_159_000, sv3.second_fraction * 1e9
     assert_equal make_offset(5, 30, 43), sv3.offset
     assert_equal 'bar', config['special_value_4']
     assert_in_epsilon DateTime.now.to_time.to_f, config['special_value_5'].to_time.to_f
@@ -787,11 +787,11 @@ class ConfigTest < Minitest::Test
 
     # floats
     assert_equal 123.456, config['common_or_garden']
-    assert_equal 0.123, config["leading_zero_not_needed"]
-    assert_equal 123.0, config["trailing_zero_not_needed"]
-    assert_equal 1.0e6, config["scientific_large"]
-    assert_equal 1.0e-7, config["scientific_small"]
-    assert_equal 3.14159, config["expression_1"]
+    assert_equal 0.123, config['leading_zero_not_needed']
+    assert_equal 123.0, config['trailing_zero_not_needed']
+    assert_equal 1.0e6, config['scientific_large']
+    assert_equal 1.0e-7, config['scientific_small']
+    assert_equal 3.14159, config['expression_1']
 
     # complex
     assert_equal Complex(3.0, 2.0), config['expression_2']
@@ -834,12 +834,279 @@ class ConfigTest < Minitest::Test
     rd = data_file_path 'derived'
     fn = File.join rd, 'context.cfg'
     config = Config.new
-    config.context = {
-        'bozz' => 'bozz-bozz'
-    }
+    config.context = { 'bozz' => 'bozz-bozz' }
     config.load_file fn
     assert_equal 'bozz-bozz', config['baz']
     e = assert_raises(ConfigError) { config['bad'] }
     refute_nil e.message.index 'Unknown variable '
+  end
+
+  def test_expressions
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'test.cfg'
+    config = Config.new fn
+    expected = { 'a' => 'b', 'c' => 'd' }
+    assert_equal expected, config['dicts_added']
+    expected = {
+      'a' => { 'b' => 'c', 'w' => 'x' },
+      'd' => { 'e' => 'f', 'y' => 'z' }
+    }
+    assert_equal expected, config['nested_dicts_added']
+    expected = ['a', 1, 'b', 2]
+    assert_equal expected, config['lists_added']
+    assert_equal [1, 2], config['list[:2]']
+    expected = { 'a' => 'b' }
+    assert_equal expected, config['dicts_subtracted']
+    expected = {}
+    assert_equal expected, config['nested_dicts_subtracted']
+    expected = {
+      'a_list' => [1, 2, { 'a' => 3 }],
+      'a_map' => { 'k1' => ['b', 'c', { 'd' => 'e' }] }
+    }
+    assert_equal expected, config['dict_with_nested_stuff']
+    assert_equal [1, 2], config['dict_with_nested_stuff.a_list[:2]']
+    assert_equal (-4), config['unary'] # rubocop:disable Style/RedundantParentheses
+    assert_equal 'mno', config['abcdefghijkl']
+    assert_equal 8, config['power']
+    assert_equal 2.5, config['computed5']
+    assert_equal 2, config['computed6']
+    assert_equal Complex(3, 1), config['c3']
+    assert_equal Complex(5, 5), config['c4']
+    assert_equal 2, config['computed8']
+    assert_equal 160, config['computed9']
+    assert_equal 62, config['computed10']
+    assert_equal 'b', config['dict.a']
+    # second call should return the same
+    assert_equal 'b', config['dict.a']
+
+    # test interpolation
+
+    assert_equal 'A-4 a test_foo true 10 1.0e-07 1 b [a, c, e, g]Z', config['interp']
+    assert_equal '{a: b}', config['interp2']
+
+    # test failure cases
+    cases = [
+      ['bad_include', '@ operand must be a string'],
+      ['computed7', 'Not found in configuration: float4'],
+      ['bad_interp', 'Unable to convert string ']
+    ]
+    cases.each do |src, msg|
+      e = assert_raises(ConfigError) { config[src] }
+      refute_nil e.message.index msg
+    end
+  end
+
+  def test_forms
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'forms.cfg'
+    config = Config.new
+    config.include_path.push data_file_path('base')
+    config.load_file fn
+    expected = config.get('modals.deletion.contents[0].id', NULL_VALUE)
+    assert_equal expected, 'frm-deletion'
+    cases = [
+      [
+        'refs.delivery_address_field',
+        {
+          'kind' => 'field',
+          'type' => 'textarea',
+          'name' => 'postal_address',
+          'label' => 'Postal address',
+          'label_i18n' => 'postal-address',
+          'short_name' => 'address',
+          'placeholder' => 'We need this for delivering to you',
+          'ph_i18n' => 'your-postal-address',
+          'message' => ' ',
+          'required' => true,
+          'attrs' => { 'minlength' => 10 },
+          'grpclass' => 'col-md-6'
+        },
+      ],
+      [
+        'refs.delivery_instructions_field',
+        {
+          'kind' => 'field',
+          'type' => 'textarea',
+          'name' => 'delivery_instructions',
+          'label' => 'Delivery Instructions',
+          'short_name' => 'notes',
+          'placeholder' => 'Any special delivery instructions?',
+          'message' => ' ',
+          'label_i18n' => 'delivery-instructions',
+          'ph_i18n' => 'any-special-delivery-instructions',
+          'grpclass' => 'col-md-6'
+        }
+      ],
+      [
+        'refs.verify_field',
+        {
+          'kind' => 'field',
+          'type' => 'input',
+          'name' => 'verification_code',
+          'label' => 'Verification code',
+          'label_i18n' => 'verification-code',
+          'short_name' => 'verification code',
+          'placeholder' => 'Your verification code (NOT a backup code)',
+          'ph_i18n' => 'verification-not-backup-code',
+          'attrs' => {
+            'minlength' => 6,
+            'maxlength' => 6,
+            'autofocus' => true
+          },
+          'append' => {
+            'label' => 'Verify',
+            'type' => 'submit',
+            'classes' => 'btn-primary'
+          },
+          'message' => ' ',
+          'required' => true
+        }
+      ],
+      [
+        'refs.signup_password_field',
+        {
+          'kind' => 'field',
+          'type' => 'password',
+          'label' => 'Password',
+          'label_i18n' => 'password',
+          'message' => ' ',
+          'name' => 'password',
+          'ph_i18n' => 'password-wanted-on-site',
+          'placeholder' => 'The password you want to use on this site',
+          'required' => true,
+          'toggle' => true
+        }
+      ],
+      [
+        'refs.signup_password_conf_field',
+        {
+          'kind' => 'field',
+          'type' => 'password',
+          'name' => 'password_conf',
+          'label' => 'Password confirmation',
+          'label_i18n' => 'password-confirmation',
+          'placeholder' => 'The same password, again, to guard against mistyping',
+          'ph_i18n' => 'same-password-again',
+          'message' => ' ',
+          'toggle' => true,
+          'required' => true
+        }
+      ],
+      [
+        'fieldsets.signup_ident[0].contents[0]',
+        {
+          'kind' => 'field',
+          'type' => 'input',
+          'name' => 'display_name',
+          'label' => 'Your name',
+          'label_i18n' => 'your-name',
+          'placeholder' => 'Your full name',
+          'ph_i18n' => 'your-full-name',
+          'message' => ' ',
+          'data_source' => 'user.display_name',
+          'required' => true,
+          'attrs' => { 'autofocus' => true },
+          'grpclass' => 'col-md-6'
+        }
+      ],
+      [
+        'fieldsets.signup_ident[0].contents[1]',
+        {
+          'kind' => 'field',
+          'type' => 'input',
+          'name' => 'familiar_name',
+          'label' => 'Familiar name',
+          'label_i18n' => 'familiar-name',
+          'placeholder' => 'If not just the first word in your full name',
+          'ph_i18n' => 'if-not-first-word',
+          'data_source' => 'user.familiar_name',
+          'message' => ' ',
+          'grpclass' => 'col-md-6'
+        }
+      ],
+      [
+        'fieldsets.signup_ident[1].contents[0]',
+        {
+          'kind' => 'field',
+          'type' => 'email',
+          'name' => 'email',
+          'label' => 'Email address (used to sign in)',
+          'label_i18n' => 'email-address',
+          'short_name' => 'email address',
+          'placeholder' => 'Your email address',
+          'ph_i18n' => 'your-email-address',
+          'message' => ' ',
+          'required' => true,
+          'data_source' => 'user.email',
+          'grpclass' => 'col-md-6'
+        }
+      ],
+      [
+        'fieldsets.signup_ident[1].contents[1]',
+        {
+          'kind' => 'field',
+          'type' => 'input',
+          'name' => 'mobile_phone',
+          'label' => 'Phone number',
+          'label_i18n' => 'phone-number',
+          'short_name' => 'phone number',
+          'placeholder' => 'Your phone number',
+          'ph_i18n' => 'your-phone-number',
+          'classes' => 'numeric',
+          'message' => ' ',
+          'prepend' => { 'icon' => 'phone' },
+          'attrs' => { 'maxlength' => 10 },
+          'required' => true,
+          'data_source' => 'customer.mobile_phone',
+          'grpclass' => 'col-md-6'
+        }
+      ]
+    ]
+    cases.each do |path, exp|
+      assert_equal exp, config[path]
+    end
+  end
+
+  def test_path_across_includes
+    rd = data_file_path 'base'
+    fn = File.join rd, 'main.cfg'
+    config = Config.new fn
+    assert_equal 'run/server.log', config['logging.appenders.file.filename']
+    assert_equal true, config['logging.appenders.file.append']
+    assert_equal 'run/server-errors.log', config['logging.appenders.error.filename']
+    assert_equal false, config['logging.appenders.error.append']
+    assert_equal 'https://freeotp.github.io/', config['redirects.freeotp.url']
+    assert_equal false, config['redirects.freeotp.permanent']
+  end
+
+  def test_sources
+    cases = [
+      'foo[::2]',
+      'foo[:]',
+      'foo[:2]',
+      'foo[2:]',
+      'foo[::1]',
+      'foo[::-1]',
+      'foo[3]'
+    ]
+    cases.each do |src|
+      node = parse_path src
+      assert_equal src, to_source(node)
+    end
+  end
+
+  def test_bad_conversions
+    config = Config.new
+    cases = [
+      'foo'
+    ]
+    cases.each do |it|
+      config.strict_conversions = true
+      e = assert_raises(ConfigError) { config.convert_string it }
+      refute_nil e.message.index "Unable to convert string #{it}"
+      config.strict_conversions = false
+      s = config.convert_string it
+      assert s.equal? it
+    end
   end
 end

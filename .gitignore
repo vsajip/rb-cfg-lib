@@ -6,6 +6,5 @@
 /pkg/
 /spec/reports/
 /tmp/
-.rubocop.yml
 .byebug_history
 Gemfile.lock
