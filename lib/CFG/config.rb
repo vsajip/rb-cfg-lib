@@ -1809,16 +1809,13 @@ module CFG
 
     def as_list
       result = []
-      each do |rv|
-        rv = if rv.is_a?(DictWrapper) || rv.is_a?(Config)
-               rv.as_dict
-             elsif rv.is_a? ListWrapper
-               rv.as_list
-             else
-               # TODO: check why this unwrap is needed here, but not in
-               # e.g. Kotlin version
-               unwrap @config.evaluated(rv)
-             end
+      each do |v|
+        rv = @config.evaluated(v)
+        if rv.is_a?(DictWrapper) || rv.is_a?(Config)
+          rv = rv.as_dict
+        elsif rv.is_a? ListWrapper
+          rv = rv.as_list
+        end
         result.push rv
       end
       result
