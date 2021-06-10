@@ -1351,6 +1351,7 @@ module CFG
         result.cached = @config.cached
         result.set_path p
         result.parent = @config
+        result.include_path = @config.include_path
         result.data = result.wrap_mapping cnode
       end
       result
@@ -2061,8 +2062,9 @@ module CFG
             raise
           rescue ConfigError
             if default.equal? MISSING
-              e = ConfigError.new "Not found in configuration: #{key}"
-              raise e
+              #e = ConfigError.new "Not found in configuration: #{key}"
+              #raise e
+              raise
             end
             result = default
           end

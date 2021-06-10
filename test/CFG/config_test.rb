@@ -1192,4 +1192,14 @@ class ConfigTest < Minitest::Test
     cfg = Config.new stream
     assert_equal 2, cfg['test.computed6']
   end
+
+  def test_nested_include_paths
+    rd = data_file_path 'base'
+    fn = File.absolute_path File.join(rd, 'top.cfg')
+    cfg = Config.new
+    cfg.include_path.push data_file_path('derived')
+    cfg.include_path.push data_file_path('another')
+    cfg.load_file fn
+    assert_equal 42, cfg['level1.level2.final']
+  end
 end
