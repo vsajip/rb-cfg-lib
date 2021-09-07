@@ -1934,7 +1934,7 @@ module CFG
     attr_accessor :data
     attr_accessor :evaluator
 
-    def initialize(path_or_reader = nil)
+    def initialize(path_or_stream = nil)
       @no_duplicates = true
       @strict_conversions = true
       @context = {}
@@ -1948,12 +1948,12 @@ module CFG
       @data = nil
       @parent = nil
 
-      return if path_or_reader.nil?
+      return if path_or_stream.nil?
 
-      if path_or_reader.is_a? String
-        load_file path_or_reader
+      if path_or_stream.is_a? String
+        load_file path_or_stream
       else
-        load path_or_reader
+        load path_or_stream
       end
     end
 
