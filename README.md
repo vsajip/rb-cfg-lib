@@ -20,19 +20,108 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+The CFG configuration format is a text format for configuration files which is similar to, and a superset of, the JSON format. It dates from [2008](https://wiki.python.org/moin/HierConfig) and has the following aims:
 
-## Development
+* Allow a hierarchical configuration scheme with support for key-value mappings and lists.
+* Support cross-references between one part of the configuration and another.
+* Provide the ability to compose configurations (using include and merge facilities).
+* Provide the ability to access real application objects safely.
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+It overcomes a number of drawbacks of JSON when used as a configuration format:
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+* JSON is more verbose than necessary.
+* JSON doesn’t allow comments.
+* JSON doesn’t allow trailing commas in lists and mappings.
 
-## Contributing
+A simple example
+================
 
-Bug reports and pull requests are welcome on GitLab at https://gitlab.com/vsajip/rbconfig.
+With the following configuration file, `test0.cfg`:
+```text
+a: 'Hello, '
+b: 'world!'
+c: {
+  d: 'e'
+}
+'f.g': 'h'
+christmas_morning: `2019-12-25 08:39:49`
+home: `$HOME`
+foo: `$FOO|bar`
+```
 
+You can load and query the above configuration using, for example, [irb](https://ruby-doc.org/stdlib-2.4.0/libdoc/irb/rdoc/IRB.html):
 
-## License
+Loading a configuration
+-----------------------
 
-The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+The configuration above can be loaded as shown below. In the REPL shell:
+```text
+2.7.1 :001 > require 'CFG/config'
+ => true
+2.7.1 :002 > include CFG
+ => Object
+2.7.1 :003 > cfg = CFG::Config::new("test0.cfg")
+```
+
+The successful `new()` call returns a `Config` instance which can be used to query the configuration.
+
+Access elements with keys
+-------------------------
+Accessing elements of the configuration with a simple key is not much harder than using a `Hash`:
+```text
+2.7.1 :004 > cfg['a']
+ => "Hello, "
+2.7.1 :005 > cfg['b']
+ => "world!"
+```
+
+Access elements with paths
+--------------------------
+As well as simple keys, elements can also be accessed using path strings:
+```text
+2.7.1 :006 > cfg['c.d']
+ => "e"
+```
+Here, the desired value is obtained in a single step, by (under the hood) walking the path `c.d` – first getting the mapping at key `c`, and then the value at `d` in the resulting mapping.
+
+Note that you can have simple keys which look like paths:
+```text
+2.7.1 :007 > cfg['f.g']
+ => "h"
+```
+If a key is given that exists in the configuration, it is used as such, and if it is not present in the configuration, an attempt is made to interpret it as a path. Thus, `f.g` is present and accessed via key, whereas `c.d` is not an existing key, so is interpreted as a path.
+
+Access to date/time objects
+---------------------------
+You can also get native Ruby date/time objects from a configuration, by using an ISO date/time pattern in a backtick-string:
+```text
+2.7.1 :008 > cfg['christmas_morning']
+ => #<DateTime: 2019-12-25T08:39:49+00:00 ((2458843j,31189s,0n),+0s,2299161j)>
+```
+Access to other Ruby objects
+----------------------------
+Access to other Ruby objects is also possible using the backtick-string syntax, provided that they are one of:
+* Environment variables
+* Public fields of public classes
+* Public static methods without parameters of public classes
+```text
+2.7.1 :009 > require 'date'
+ => false
+2.7.1 :010 > DateTime::now - cfg['now']
+ => (-148657/86400000000000)
+ ```
+
+Access to environment variables
+-------------------------------
+To access an environment variable, use a backtick-string of the form `$VARNAME`:
+```text
+2.7.1 :011 > cfg['home'] == ENV['HOME']
+ => true
+```
+You can specify a default value to be used if an environment variable isn’t present using the `$VARNAME|default-value` form. Whatever string follows the pipe character (including the empty string) is returned if the VARNAME is not a variable in the environment.
+```text
+2.7.1 :012 > cfg['foo']
+ => "bar"
+```
+
+For more information, see [the CFG documentation](https://docs.red-dove.com/cfg/index.html).
