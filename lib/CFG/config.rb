@@ -2,7 +2,7 @@
 # Copyright (C) 2021 Vinay Sajip <vinay_sajip@yahoo.co.uk>
 #
 # See LICENSE file for usage rights.
-#  
+#
 require 'date'
 require 'set'
 require 'stringio'
@@ -1252,7 +1252,7 @@ module CFG
 
     def comparison
       result = bitor_expr
-      while COMPARISON_OPERATORS.include? @next_token.kind
+      if COMPARISON_OPERATORS.include? @next_token.kind
         op = comp_op
         result = BinaryNode.new op, result, bitor_expr
       end
