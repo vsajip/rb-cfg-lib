@@ -1207,4 +1207,12 @@ class ConfigTest < Minitest::Test
     cfg.load_file fn
     assert_equal 42, cfg['level1.level2.final']
   end
+
+  def test_recursive_configuration
+    rd = data_file_path 'derived'
+    fn = File.join rd, 'recurse.cfg'
+    config = Config.new fn
+    e = assert_raises(ConfigError) { config['recurse'] }
+    assert_equal e.message, 'Configuration cannot include itself: recurse.cfg'
+  end
 end

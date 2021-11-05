@@ -7,7 +7,8 @@ Gem::Specification.new do |spec|
   spec.email = ['vinay_sajip@yahoo.co.uk']
 
   spec.summary = 'A Ruby library for working with the CFG configuration format.'
-  spec.description = 'A Ruby library for working with the CFG configuration format. See https://docs.red-dove.com/cfg/index.html for more information.'
+  spec.description = 'A Ruby library for working with the CFG configuration format. \
+See https://docs.red-dove.com/cfg/index.html for more information.'
   spec.homepage = 'https://docs.red-dove.com/cfg/index.html'
   spec.license  = 'MIT'
   spec.required_ruby_version = Gem::Requirement.new('>= 2.3.0')

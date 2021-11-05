@@ -280,7 +280,8 @@ module CFG
     '&' => :BITWISE_AND,
     '|' => :BITWISE_OR,
     '^' => :BITWISE_XOR,
-    '.' => :DOT
+    '.' => :DOT,
+    '=' => :ASSIGN
   }.freeze
 
   KEYWORDS = {
@@ -658,19 +659,6 @@ module CFG
           token = append_char token, c, end_location
           token, kind, value = get_number token, start_location, end_location
           break
-        elsif c == '='
-          nc = get_char
-
-          if nc != '='
-            kind = :ASSIGN
-            token += c
-            push_back nc
-          else
-            kind = :EQUAL
-            token += c
-            token = append_char token, c, end_location
-          end
-          break
         elsif PUNCTUATION.key?(c)
           kind = PUNCTUATION[c]
           token = append_char token, c, end_location
@@ -681,6 +669,14 @@ module CFG
             else
               token = append_char token, c, end_location
               token, kind, value = get_number token, start_location, end_location
+            end
+          elsif c == '='
+            c = get_char
+            if c != '='
+              push_back c
+            else
+              kind = :EQUAL
+              token = append_char token, c, end_location
             end
           elsif c == '-'
             c = get_char
@@ -1313,6 +1309,10 @@ module CFG
       @refs_seen = Set.new
     end
 
+    def same_file(fn1, fn2)
+      File.identical?(fn1, fn2)
+    end
+
     def eval_at(node)
       fn = evaluate node.operand
       unless fn.is_a? String
@@ -1340,6 +1340,11 @@ module CFG
       end
       unless found
         e = ConfigError.new "Unable to locate #{fn}"
+        e.location = node.operand.start
+        raise e
+      end
+      if !@config.path.nil? && same_file(@config.path, p)
+        e = ConfigError.new "Configuration cannot include itself: #{File.basename(fn)}"
         e.location = node.operand.start
         raise e
       end
@@ -2067,10 +2072,11 @@ module CFG
             raise
           rescue ConfigError
             if default.equal? MISSING
-              #e = ConfigError.new "Not found in configuration: #{key}"
-              #raise e
+              # e = ConfigError.new "Not found in configuration: #{key}"
+              # raise e
               raise
             end
+
             result = default
           end
         end
