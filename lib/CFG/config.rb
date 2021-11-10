@@ -618,7 +618,7 @@ module CFG
             c2 = get_char
             if c2 != quote
               push_back c2
-              @char_location.update c1_loc if c2.nil?
+              @char_location.update c1_loc
               push_back c1
             else
               multi_line = true
