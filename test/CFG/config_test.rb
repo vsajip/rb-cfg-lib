@@ -1189,13 +1189,16 @@ class ConfigTest < Minitest::Test
     end
   end
 
-  def test_absolute_include_paths
+  def test_include_paths
     rd = data_file_path 'derived'
-    fn = File.absolute_path File.join(rd, 'test.cfg')
-    src = "test: @'#{fn}'"
-    stream = StringIO.new src, 'r:utf-8'
-    cfg = Config.new stream
-    assert_equal 2, cfg['test.computed6']
+    p1 = File.join(rd, 'test.cfg')
+    p2 = File.absolute_path p1
+    [p1, p2].each { |fn|
+      src = "test: @'#{fn}'"
+      stream = StringIO.new src, 'r:utf-8'
+      cfg = Config.new stream
+      assert_equal 2, cfg['test.computed6']
+    }
   end
 
   def test_nested_include_paths

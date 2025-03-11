@@ -1950,7 +1950,7 @@ module CFG
       @context = {}
       @include_path = []
       @path = nil
-      @root_dir = nil
+      @root_dir = Dir.pwd
       @evaluator = Evaluator.new self
       @string_converter = method :default_string_converter
 
@@ -2029,11 +2029,6 @@ module CFG
       @cache&.clear
     end
 
-    def get_from_path(path)
-      @evaluator.refs_seen.clear
-      @evaluator.get_from_path parse_path(path)
-    end
-
     def convert_string(str)
       result = @string_converter.call str, self
       raise ConfigError, "Unable to convert string #{str}" if strict_conversions && result.equal?(str)
@@ -2067,7 +2062,10 @@ module CFG
         else
           # not an identifier. Treat as a path
           begin
-            result = get_from_path key
+            #result = get_from_path key
+            @evaluator.refs_seen.clear
+            result = @evaluator.get_from_path parse_path(key)
+
           rescue InvalidPathError, BadIndexError, CircularReferenceError
             raise
           rescue ConfigError
